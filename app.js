@@ -24,6 +24,46 @@ async function init(){
   supabaseClient.auth.onAuthStateChange(async (_event,session)=>{if(session && !currentUser) await enterApp(session.user); else if(!session){currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)}});
 }
 $("loginForm").addEventListener("submit",async e=>{
+$("signupForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!supabaseClient) return;
+
+  const full_name = $("signupName").value.trim();
+  const email = $("signupEmail").value.trim();
+  const password = $("signupPassword").value;
+
+  if (!full_name) {
+    msg("signupMessage", "Vui lòng nhập họ và tên.");
+    return;
+  }
+
+  msg("signupMessage", "Đang tạo tài khoản...", false);
+
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name }
+    }
+  });
+
+  if (error) {
+    msg("signupMessage", "Đăng ký chưa thành công: " + error.message);
+    return;
+  }
+
+  if (data.session) {
+    await supabaseClient.auth.signOut();
+  }
+
+  $("signupForm").reset();
+  msg(
+    "signupMessage",
+    "Đăng ký thành công. Vui lòng chờ quản lý kích hoạt tài khoản.",
+    false
+  );
+});
+
   e.preventDefault(); if(!supabaseClient)return;
   msg("authMessage","Đang đăng nhập...",false);
   const {error}=await supabaseClient.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
