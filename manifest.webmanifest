@@ -1,0 +1,18 @@
+{
+  "name": "Giao Việc Nội Bộ",
+  "short_name": "Giao Việc",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#1769e0",
+  "description": "Ứng dụng giao việc nội bộ đơn giản",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1769e0">
+  <meta name="description" content="Ứng dụng giao việc nội bộ đơn giản">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Giao Việc</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon">✓</span><div><strong>Giao Việc</strong><small>Đơn giản · Nhanh chóng · Hiệu quả</small></div></div>
+    <button id="logoutBtn" class="btn btn-ghost hidden">Đăng xuất</button>
+  </header>
+
+  <main class="container">
+    <section id="configNotice" class="notice hidden">
+      <h2>Cần kết nối cơ sở dữ liệu</h2>
+      <p>Mở <code>app.js</code> và điền <code>SUPABASE_URL</code> cùng <code>SUPABASE_ANON_KEY</code> theo hướng dẫn trong README.</p>
+    </section>
+
+    <section id="authView" class="auth-card">
+      <div class="eyebrow">WORKSPACE NỘI BỘ</div>
+      <h1>Đăng nhập</h1>
+      <p class="muted">Đăng nhập để xem và cập nhật công việc của bạn.</p>
+      <form id="loginForm" class="stack">
+        <label>Email công ty / email cá nhân<input id="email" type="email" autocomplete="username" placeholder="ten@congty.vn" required></label>
+        <label>Mật khẩu<input id="password" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required minlength="6"></label>
+        <button class="btn btn-primary" type="submit">Đăng nhập</button>
+        <p id="authMessage" class="message" aria-live="polite"></p>
+      </form>
+      <p class="small muted">Tài khoản do quản lý tạo; không có chức năng tự đăng ký công khai.</p>
+    </section>
+
+    <section id="appView" class="hidden">
+      <div class="welcome-row">
+        <div><div class="eyebrow" id="roleLabel">BẢNG CÔNG VIỆC</div><h1 id="welcomeTitle">Xin chào</h1></div>
+        <button id="installBtn" class="btn btn-light hidden">Cài app</button>
+      </div>
+
+      <div id="summary" class="summary-grid">
+        <div class="summary-card"><span>Chưa làm</span><strong id="countTodo">0</strong></div>
+        <div class="summary-card"><span>Đang làm</span><strong id="countDoing">0</strong></div>
+        <div class="summary-card overdue"><span>Quá hạn</span><strong id="countLate">0</strong></div>
+      </div>
+
+      <section id="createSection" class="panel hidden">
+        <div class="section-heading"><div><div class="eyebrow">QUẢN LÝ</div><h2>Giao việc mới</h2></div></div>
+        <form id="taskForm" class="task-form">
+          <label>Tên công việc *<input id="taskTitle" maxlength="140" placeholder="VD: Kiểm tra xe trước khi giao" required></label>
+          <label>Người thực hiện *<select id="assignee" required><option value="">Đang tải nhân viên...</option></select></label>
+          <div class="two-col">
+            <label>Hạn hoàn thành *<input id="dueAt" type="datetime-local" required></label>
+            <label>Ưu tiên<select id="priority"><option value="normal">Bình thường</option><option value="high">Cao</option></select></label>
+          </div>
+          <label>Ghi chú (không bắt buộc)<textarea id="taskNotes" rows="3" maxlength="1000" placeholder="Mô tả ngắn gọn yêu cầu..."></textarea></label>
+          <button class="btn btn-primary" type="submit">+ Giao việc</button>
+          <p id="taskMessage" class="message" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading"><div><div class="eyebrow">THEO DÕI</div><h2 id="listHeading">Công việc của tôi</h2></div>
+          <button id="refreshBtn" class="btn btn-light" type="button">↻ Làm mới</button>
+        </div>
+        <div class="filters">
+          <button class="filter active" data-filter="all">Tất cả</button>
+          <button class="filter" data-filter="todo">Chưa làm</button>
+          <button class="filter" data-filter="doing">Đang làm</button>
+          <button class="filter" data-filter="done">Hoàn thành</button>
+          <button class="filter" data-filter="late">Quá hạn</button>
+        </div>
+        <div id="taskList" class="task-list"><div class="empty">Đang tải công việc...</div></div>
+      </section>
+      <p class="footer-note">Mẹo: thêm trang này vào màn hình chính để mở nhanh như một ứng dụng.</p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
