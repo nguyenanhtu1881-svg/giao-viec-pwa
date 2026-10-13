@@ -1,7 +1,7 @@
 // 1) Dán Project URL và anon/public key của Supabase vào đây.
 // Không bao giờ đưa service_role key vào mã chạy trên trình duyệt.
-const SUPABASE_URL = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhweG14c3p1b2lhZ3ZibXB1Ym9jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4NDY0NTcsImV4cCI6MjEwNzQyMjQ1N30.GcH5I89eP1SjPDwolDymd45I7qdPe1k2tyOzFtzA1YA";
-const SUPABASE_ANON_KEY = "sb_publishable_OhG0GZFLD7SsxWa-K5qPdQ_DHnZQy75";
+const SUPABASE_URL = "https://sb_publishable_OhG0GZFLD7SsxWa-K5qPdQ_DHnZQy75";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhweG14c3p1b2lhZ3ZibXB1Ym9jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4NDY0NTcsImV4cCI6MjEwNzQyMjQ1N30.GcH5I89eP1SjPDwolDymd45I7qdPe1k2tyOzFtzA1YA";
 
 const configured = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("DAN_") && !SUPABASE_ANON_KEY.includes("DAN_");
 const $ = (id) => document.getElementById(id);
