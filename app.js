@@ -106,7 +106,10 @@ async function loadEmployees(){
   const {data,error}=await supabaseClient.from("profiles").select("id,full_name,email").eq("active",true).order("full_name");
   if(error){msg("taskMessage","Không tải được danh sách nhân viên: "+error.message);return}
   employees=data||[];
-  $("assignee").innerHTML='<option value="">Chọn nhân viên</option>'+employees.filter(x=>x.id!==currentUser.id || true).map(x=>`<option value="${x.id}">${esc(x.full_name||x.email||"Nhân viên")}</option>`).join("");
+  const employeeOptions = employees.map(x=>`<option value="${x.id}">${esc(x.full_name||x.email||"Nhân viên")}</option>`).join("");
+  $("assignee").innerHTML='<option value="">Chọn nhân viên</option>'+employeeOptions;
+  const stationUser = $("stationUser");
+  if (stationUser) stationUser.innerHTML='<option value="">Chọn tài khoản</option>'+employeeOptions;
 }
 
 async function loadIntakeQueue() {
