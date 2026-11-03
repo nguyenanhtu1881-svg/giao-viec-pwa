@@ -21,7 +21,7 @@ async function init(){
   supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   const {data:{session}}=await supabaseClient.auth.getSession();
   if(session) await enterApp(session.user);
-  supabaseClient.auth.onAuthStateChange(async (_event,session)=>{if(session && !currentUser) await enterApp(session.user); else if(!session){currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)}});
+  supabaseClient.auth.onAuthStateChange(async (event,session)=>{if(event==="PASSWORD_RECOVERY"){show("authView",true);show("appView",false);show("passwordResetPanel",true);msg("passwordResetMessage","Đã xác thực liên kết. Hãy nhập mật khẩu mới.",false);return;} if(session && !currentUser) await enterApp(session.user); else if(!session){currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)}});
 }
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -36,6 +36,52 @@ $("loginForm").addEventListener("submit", async e => {
   if (error) {
     msg("authMessage", "Không đăng nhập được. Vui lòng kiểm tra email, mật khẩu hoặc liên hệ quản lý.");
   }
+});
+
+
+$("forgotPasswordBtn").addEventListener("click", async () => {
+  if (!supabaseClient) return;
+  const email = $("email").value.trim();
+  if (!email) {
+    msg("resetRequestMessage", "Vui lòng nhập email tài khoản vào ô Email trước.");
+    $("email").focus();
+    return;
+  }
+  msg("resetRequestMessage", "Đang gửi email khôi phục...", false);
+  const redirectTo = window.location.origin + window.location.pathname;
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) {
+    console.error(error);
+    msg("resetRequestMessage", "Chưa gửi được email khôi phục: " + error.message);
+    return;
+  }
+  msg("resetRequestMessage", "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi tới hộp thư. Vui lòng kiểm tra cả Spam/Junk.", false);
+});
+
+$("passwordResetForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!supabaseClient) return;
+  const password = $("newPassword").value;
+  const confirm = $("confirmNewPassword").value;
+  if (password.length < 8) {
+    msg("passwordResetMessage", "Mật khẩu cần ít nhất 8 ký tự.");
+    return;
+  }
+  if (password !== confirm) {
+    msg("passwordResetMessage", "Hai mật khẩu không khớp.");
+    return;
+  }
+  msg("passwordResetMessage", "Đang cập nhật mật khẩu...", false);
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if (error) {
+    console.error(error);
+    msg("passwordResetMessage", "Không cập nhật được mật khẩu: " + error.message);
+    return;
+  }
+  $("passwordResetForm").reset();
+  show("passwordResetPanel", false);
+  msg("resetRequestMessage", "Đã đổi mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.", false);
+  await supabaseClient.auth.signOut();
 });
 
 $("signupForm").addEventListener("submit", async e => {
