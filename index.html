@@ -74,6 +74,55 @@
         <div class="summary-card overdue"><span>Quá hạn</span><strong id="countLate">0</strong></div>
       </div>
 
+
+      <section id="intakeSection" class="panel hidden">
+        <div class="section-heading"><div><div class="eyebrow">TIẾP NHẬN XE</div><h2>Gửi phiếu tiếp nhận</h2><p id="intakeStationLabel" class="muted small">Trạm tiếp nhận</p></div></div>
+        <form id="intakeForm" class="task-form">
+          <label>Ảnh phiếu báo giá hoặc phiếu kiểm tra *
+            <input id="intakeImage" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required>
+          </label>
+          <img id="intakePreview" class="intake-preview hidden" alt="Ảnh phiếu đã chọn">
+          <div class="two-col">
+            <label>Loại phiếu
+              <select id="intakeDocumentType">
+                <option value="unknown">Để hệ thống nhận diện</option>
+                <option value="quotation">Báo giá sửa chữa</option>
+                <option value="inspection">Phiếu kiểm tra tiếp nhận</option>
+              </select>
+            </label>
+            <label>Biển số xe *
+              <input id="intakePlate" maxlength="16" placeholder="VD: 50H-123.45" required>
+            </label>
+          </div>
+          <button id="ocrButton" class="btn btn-light" type="button">Đọc thử thông tin trên ảnh</button>
+          <p id="ocrMessage" class="message" aria-live="polite"></p>
+          <div class="two-col">
+            <label>Tên khách hàng<input id="intakeCustomer" maxlength="150" placeholder="Không bắt buộc"></label>
+            <label>Dòng xe<input id="intakeModel" maxlength="100" placeholder="VD: N250SL"></label>
+          </div>
+          <label>Số khung (nếu đọc được)<input id="intakeChassis" maxlength="80"></label>
+          <p class="small muted">Vui lòng kiểm tra lại biển số trước khi xác nhận. Ảnh gốc sẽ được lưu cùng hồ sơ.</p>
+          <button class="btn btn-primary" type="submit">Xác nhận tiếp nhận xe</button>
+          <p id="intakeMessage" class="message" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="stationAdminSection" class="panel hidden">
+        <div class="eyebrow">CẤU HÌNH TRẠM</div><h2>Gán tài khoản tiếp nhận</h2>
+        <p class="muted small">Chọn tài khoản nhân viên và gán một trong bốn trạm tiếp nhận.</p>
+        <form id="stationAdminForm" class="task-form">
+          <label>Tài khoản nhân viên<select id="stationUser" required><option value="">Chọn tài khoản</option></select></label>
+          <label>Trạm tiếp nhận<select id="stationNo" required><option value="1">Trạm 1</option><option value="2">Trạm 2</option><option value="3">Trạm 3</option><option value="4">Trạm 4</option></select></label>
+          <button class="btn btn-primary" type="submit">Lưu phân quyền trạm</button>
+          <p id="stationAdminMessage" class="message" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="intakeQueueSection" class="panel hidden">
+        <div class="section-heading"><div><div class="eyebrow">QUẢN LÝ</div><h2>Hàng đợi xe tiếp nhận</h2></div><button id="refreshIntakes" class="btn btn-light" type="button">↻ Làm mới</button></div>
+        <div id="intakeQueue" class="task-list"><div class="empty">Chưa có hồ sơ tiếp nhận.</div></div>
+      </section>
+
       <section id="createSection" class="panel hidden">
         <div class="section-heading"><div><div class="eyebrow">QUẢN LÝ</div><h2>Giao việc mới</h2></div></div>
         <form id="taskForm" class="task-form">
@@ -108,6 +157,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
