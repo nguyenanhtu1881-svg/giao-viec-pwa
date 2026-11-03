@@ -390,7 +390,8 @@ $("accountList")?.addEventListener("click", e => {
   const button = e.target.closest("[data-save-account]");
   if (button) saveAccountAdmin(button.dataset.saveAccount);
 });
-\n$("intakeImage")?.addEventListener("change", e => {
+
+$("intakeImage")?.addEventListener("change", e => {
   const file = e.target.files?.[0];
   if (!file) return;
   $("intakePreview").src = URL.createObjectURL(file);
