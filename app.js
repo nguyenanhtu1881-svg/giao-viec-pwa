@@ -86,8 +86,10 @@ async function enterApp(user){
   $("listHeading").textContent=profile.role==="admin"?"Tất cả công việc":"Công việc của tôi";
   if(profile.role==="admin") {
     await loadEmployees();
-    show("stationAdminSection", true);
+    show("stationAdminSection", currentUser.email === "tu.nguyen@hyundaimiennam.com");
     show("intakeQueueSection", true);
+    show("accountAdminSection", currentUser.email === "tu.nguyen@hyundaimiennam.com");
+    if (currentUser.email === "tu.nguyen@hyundaimiennam.com") await loadAccountAdmin();
     await loadIntakeQueue();
   }
   const { data: stationData } = await supabaseClient
@@ -110,6 +112,61 @@ async function loadEmployees(){
   $("assignee").innerHTML='<option value="">Chọn nhân viên</option>'+employeeOptions;
   const stationUser = $("stationUser");
   if (stationUser) stationUser.innerHTML='<option value="">Chọn tài khoản</option>'+employeeOptions;
+}
+
+
+async function loadAccountAdmin() {
+  if (currentUser?.email !== "tu.nguyen@hyundaimiennam.com") return;
+  const box = $("accountList");
+  if (!box) return;
+  box.innerHTML = '<div class="empty">Đang tải tài khoản...</div>';
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id,full_name,email,role,active,work_role,created_at")
+    .order("created_at", { ascending: false });
+  if (error) {
+    box.innerHTML = '<div class="empty">Không tải được danh sách tài khoản.</div>';
+    console.error(error);
+    return;
+  }
+  box.innerHTML = (data || []).map(p => {
+    const primary = p.email === "tu.nguyen@hyundaimiennam.com";
+    const roleOptions = [
+      ["unassigned","Chưa phân công"],
+      ["intake","Nhân viên tiếp nhận"],
+      ["technician","Kỹ thuật viên"],
+      ["manager","Quản lý"]
+    ].map(([v,label]) => '<option value="' + v + '"' + ((p.work_role || "unassigned")===v?" selected":"") + '>' + label + '</option>').join("");
+    return '<article class="intake-card" data-account-id="' + p.id + '">' +
+      '<div class="task-top"><strong>' + esc(p.full_name || "Chưa có họ tên") + '</strong><span class="pill ' + (p.active?"done":"todo") + '">' + (p.active?"Đã kích hoạt":"Chờ kích hoạt") + '</span></div>' +
+      '<div class="task-meta">' + esc(p.email || "") + '</div>' +
+      '<div class="task-meta">Quyền hệ thống: ' + (p.role==="admin"?"Admin":"Nhân viên") + (primary?" · Admin chính":"") + '</div>' +
+      (primary ? '<p class="small muted">Tài khoản Admin chính được bảo vệ, không thể thay đổi quyền hoặc khóa.</p>' :
+      '<label>Vai trò công việc<select data-work-role="' + p.id + '">' + roleOptions + '</select></label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" data-active="' + p.id + '"' + (p.active?" checked":"") + '> Kích hoạt tài khoản</label>' +
+      '<button class="btn btn-primary" type="button" data-save-account="' + p.id + '" style="margin-top:10px">Lưu phân quyền</button>') +
+      '</article>';
+  }).join("") || '<div class="empty">Chưa có tài khoản.</div>';
+}
+
+async function saveAccountAdmin(id) {
+  if (currentUser?.email !== "tu.nguyen@hyundaimiennam.com") return;
+  const card = document.querySelector('[data-account-id="' + id + '"]');
+  if (!card) return;
+  const work_role = card.querySelector('[data-work-role]').value;
+  const active = card.querySelector('[data-active]').checked;
+  const { error } = await supabaseClient.from("profiles")
+    .update({ work_role, active, role: "employee" })
+    .eq("id", id)
+    .neq("email", "tu.nguyen@hyundaimiennam.com");
+  if (error) {
+    console.error(error);
+    toast("Không lưu được phân quyền. Vui lòng kiểm tra quyền tài khoản.");
+    return;
+  }
+  toast("Đã cập nhật vai trò và trạng thái tài khoản.");
+  await loadAccountAdmin();
+  await loadEmployees();
 }
 
 async function loadIntakeQueue() {
@@ -281,7 +338,13 @@ $("taskForm").addEventListener("submit",async e=>{
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installPrompt=e;show("installBtn")});
 $("installBtn").addEventListener("click",async()=>{if(!installPrompt){toast("Trên iPhone: mở nút Chia sẻ rồi chọn Thêm vào MH chính.");return}installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;show("installBtn",false)});
 
-$("intakeImage")?.addEventListener("change", e => {
+
+$("refreshAccounts")?.addEventListener("click", loadAccountAdmin);
+$("accountList")?.addEventListener("click", e => {
+  const button = e.target.closest("[data-save-account]");
+  if (button) saveAccountAdmin(button.dataset.saveAccount);
+});
+\n$("intakeImage")?.addEventListener("change", e => {
   const file = e.target.files?.[0];
   if (!file) return;
   $("intakePreview").src = URL.createObjectURL(file);
