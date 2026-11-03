@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const configured = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("DAN_") && !SUPABASE_ANON_KEY.includes("DAN_");
 const $ = (id) => document.getElementById(id);
-let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null;
+let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null, intakeStationNo = null;
 
 const statusText = {todo:"Chưa làm", doing:"Đang làm", done:"Hoàn thành"};
 function isLate(t){return t.status!=="done" && new Date(t.due_at).getTime()<Date.now()}
@@ -84,7 +84,22 @@ async function enterApp(user){
   $("roleLabel").textContent=profile.role==="admin"?"QUẢN LÝ":"NHÂN VIÊN";
   show("createSection",profile.role==="admin");
   $("listHeading").textContent=profile.role==="admin"?"Tất cả công việc":"Công việc của tôi";
-  if(profile.role==="admin")await loadEmployees();
+  if(profile.role==="admin") {
+    await loadEmployees();
+    show("stationAdminSection", true);
+    show("intakeQueueSection", true);
+    await loadIntakeQueue();
+  }
+  const { data: stationData } = await supabaseClient
+    .from("intake_station_users")
+    .select("station_no")
+    .eq("profile_id", currentUser.id)
+    .maybeSingle();
+  intakeStationNo = stationData?.station_no ?? null;
+  if (intakeStationNo) {
+    show("intakeSection", true);
+    $("intakeStationLabel").textContent = "Tài khoản được gán Trạm " + intakeStationNo;
+  }
   await loadTasks();
 }
 async function loadEmployees(){
@@ -93,6 +108,135 @@ async function loadEmployees(){
   employees=data||[];
   $("assignee").innerHTML='<option value="">Chọn nhân viên</option>'+employees.filter(x=>x.id!==currentUser.id || true).map(x=>`<option value="${x.id}">${esc(x.full_name||x.email||"Nhân viên")}</option>`).join("");
 }
+
+async function loadIntakeQueue() {
+  const box = $("intakeQueue");
+  if (!box) return;
+  box.innerHTML = '<div class="empty">Đang tải hàng đợi...</div>';
+  const { data, error } = await supabaseClient
+    .from("vehicle_intakes")
+    .select("id,plate_number,customer_name,vehicle_model,document_type,image_path,station_no,received_at,status,receiver:profiles!vehicle_intakes_received_by_fkey(full_name)")
+    .order("received_at", { ascending: true });
+  if (error) {
+    box.innerHTML = '<div class="empty">Không tải được hàng đợi tiếp nhận. Vui lòng kiểm tra quyền truy cập.</div>';
+    console.error(error);
+    return;
+  }
+  if (!data?.length) {
+    box.innerHTML = '<div class="empty">Chưa có xe nào được tiếp nhận.</div>';
+    return;
+  }
+  const cards = await Promise.all(data.map(async item => {
+    const { data: signed } = await supabaseClient.storage.from("vehicle-intakes").createSignedUrl(item.image_path, 300);
+    const image = signed?.signedUrl ? '<a href="' + signed.signedUrl + '" target="_blank" rel="noopener">Mở ảnh phiếu</a>' : "Không tạo được liên kết ảnh";
+    const receiver = item.receiver?.full_name || "Nhân viên";
+    return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":"doing") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đã phân công":"Đã đóng") + '</span></div><div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div></article>';
+  }));
+  box.innerHTML = cards.join("");
+}
+
+async function runIntakeOcr() {
+  const file = $("intakeImage").files?.[0];
+  if (!file) {
+    msg("ocrMessage", "Vui lòng chụp hoặc chọn ảnh phiếu trước.");
+    return;
+  }
+  if (!window.Tesseract) {
+    msg("ocrMessage", "Chưa tải được bộ nhận diện. Bạn có thể nhập biển số thủ công.");
+    return;
+  }
+  msg("ocrMessage", "Đang đọc ảnh. Với chữ viết tay, kết quả có thể không chính xác...", false);
+  try {
+    const result = await window.Tesseract.recognize(file, "eng");
+    const textValue = result?.data?.text || "";
+    const compact = textValue.toUpperCase().replace(/\s+/g, " ");
+    const plateMatch = compact.match(/\b\d{2}\s?[A-Z]{1,2}\s*[- ]?\s*\d{3}\s*\.?\s*\d{2}\b/) ||
+      compact.match(/\b\d{2}\s?[A-Z]{1,2}\s*[- ]?\s*\d{4,5}\b/);
+    if (plateMatch && !$("intakePlate").value.trim()) {
+      $("intakePlate").value = plateMatch[0].replace(/\s+/g, "").replace(/^(\d{2}[A-Z]{1,2})/, "$1-");
+    }
+    const normalized = textValue.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    if ($("intakeDocumentType").value === "unknown") {
+      if (normalized.includes("BAO GIA")) $("intakeDocumentType").value = "quotation";
+      else if (normalized.includes("PHIEU KIEM TRA")) $("intakeDocumentType").value = "inspection";
+    }
+    msg("ocrMessage", plateMatch ? "Đã tìm thấy gợi ý biển số. Vui lòng kiểm tra và sửa lại nếu sai." : "Chưa đọc rõ biển số. Vui lòng nhập thủ công.", false);
+  } catch (error) {
+    console.error(error);
+    msg("ocrMessage", "Không đọc được ảnh này. Vui lòng nhập biển số thủ công.");
+  }
+}
+
+async function submitVehicleIntake(e) {
+  e.preventDefault();
+  if (!intakeStationNo) {
+    msg("intakeMessage", "Tài khoản này chưa được quản lý gán trạm tiếp nhận.");
+    return;
+  }
+  const file = $("intakeImage").files?.[0];
+  const plate = $("intakePlate").value.trim().toUpperCase();
+  if (!file || !plate) {
+    msg("intakeMessage", "Vui lòng chọn một ảnh phiếu và xác nhận biển số.");
+    return;
+  }
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
+    msg("intakeMessage", "Ảnh phải là JPG, PNG hoặc WEBP và không vượt quá 8 MB.");
+    return;
+  }
+  const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = currentUser.id + "/" + Date.now() + "_" + crypto.randomUUID() + "." + extension;
+  msg("intakeMessage", "Đang tải ảnh và lưu hồ sơ...", false);
+  const { error: uploadError } = await supabaseClient.storage.from("vehicle-intakes")
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (uploadError) {
+    console.error(uploadError);
+    msg("intakeMessage", "Không tải được ảnh. Vui lòng thử lại.");
+    return;
+  }
+  const { error } = await supabaseClient.from("vehicle_intakes").insert({
+    plate_number: plate,
+    customer_name: $("intakeCustomer").value.trim() || null,
+    vehicle_model: $("intakeModel").value.trim() || null,
+    chassis_number: $("intakeChassis").value.trim() || null,
+    document_type: $("intakeDocumentType").value,
+    image_path: path,
+    station_no: intakeStationNo,
+    received_by: currentUser.id
+  });
+  if (error) {
+    await supabaseClient.storage.from("vehicle-intakes").remove([path]);
+    console.error(error);
+    msg("intakeMessage", "Ảnh đã tải lên nhưng chưa lưu được hồ sơ. Vui lòng thử lại.");
+    return;
+  }
+  $("intakeForm").reset();
+  $("intakePreview").classList.add("hidden");
+  msg("intakeMessage", "Đã tiếp nhận xe thành công.", false);
+  toast("Đã gửi hồ sơ tiếp nhận.");
+  if (profile.role === "admin") await loadIntakeQueue();
+}
+
+async function saveIntakeStation(e) {
+  e.preventDefault();
+  if (profile?.role !== "admin") return;
+  const profile_id = $("stationUser").value;
+  const station_no = Number($("stationNo").value);
+  if (!profile_id) return;
+  const { error } = await supabaseClient.from("intake_station_users")
+    .upsert({ profile_id, station_no }, { onConflict: "profile_id" });
+  if (error) {
+    console.error(error);
+    msg("stationAdminMessage", "Không lưu được. Mỗi trạm chỉ được gán cho một tài khoản.");
+    return;
+  }
+  msg("stationAdminMessage", "Đã gán tài khoản vào Trạm " + station_no + ".", false);
+  if (profile_id === currentUser.id) {
+    intakeStationNo = station_no;
+    show("intakeSection", true);
+    $("intakeStationLabel").textContent = "Tài khoản được gán Trạm " + station_no;
+  }
+}
+
 async function loadTasks(){
   $("taskList").innerHTML='<div class="empty">Đang tải công việc...</div>';
   let q=supabaseClient.from("tasks").select("id,title,notes,status,due_at,priority,created_at,assignee_id,created_by,assignee:profiles!tasks_assignee_id_fkey(full_name,email),creator:profiles!tasks_created_by_fkey(full_name)").order("due_at",{ascending:true});
@@ -133,4 +277,16 @@ $("taskForm").addEventListener("submit",async e=>{
 });
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installPrompt=e;show("installBtn")});
 $("installBtn").addEventListener("click",async()=>{if(!installPrompt){toast("Trên iPhone: mở nút Chia sẻ rồi chọn Thêm vào MH chính.");return}installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;show("installBtn",false)});
+
+$("intakeImage")?.addEventListener("change", e => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  $("intakePreview").src = URL.createObjectURL(file);
+  $("intakePreview").classList.remove("hidden");
+});
+$("ocrButton")?.addEventListener("click", runIntakeOcr);
+$("intakeForm")?.addEventListener("submit", submitVehicleIntake);
+$("stationAdminForm")?.addEventListener("submit", saveIntakeStation);
+$("refreshIntakes")?.addEventListener("click", loadIntakeQueue);
+
 init();
