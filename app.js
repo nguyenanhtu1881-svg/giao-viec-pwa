@@ -23,7 +23,21 @@ async function init(){
   if(session) await enterApp(session.user);
   supabaseClient.auth.onAuthStateChange(async (_event,session)=>{if(session && !currentUser) await enterApp(session.user); else if(!session){currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)}});
 }
-$("loginForm").addEventListener("submit",async e=>{
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!supabaseClient) return;
+
+  msg("authMessage", "Đang đăng nhập...", false);
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+
+  if (error) {
+    msg("authMessage", "Không đăng nhập được. Vui lòng kiểm tra email, mật khẩu hoặc liên hệ quản lý.");
+  }
+});
+
 $("signupForm").addEventListener("submit", async e => {
   e.preventDefault();
   if (!supabaseClient) return;
@@ -42,9 +56,7 @@ $("signupForm").addEventListener("submit", async e => {
   const { data, error } = await supabaseClient.auth.signUp({
     email,
     password,
-    options: {
-      data: { full_name }
-    }
+    options: { data: { full_name } }
   });
 
   if (error) {
@@ -52,23 +64,16 @@ $("signupForm").addEventListener("submit", async e => {
     return;
   }
 
+  // Nếu dự án bật xác nhận email tự động tạo session, thoát session ngay.
+  // Nhân viên vẫn phải chờ quản lý kích hoạt hồ sơ trước khi sử dụng.
   if (data.session) {
     await supabaseClient.auth.signOut();
   }
 
   $("signupForm").reset();
-  msg(
-    "signupMessage",
-    "Đăng ký thành công. Vui lòng chờ quản lý kích hoạt tài khoản.",
-    false
-  );
+  msg("signupMessage", "Đăng ký thành công. Vui lòng chờ quản lý kích hoạt tài khoản.", false);
 });
 
-  e.preventDefault(); if(!supabaseClient)return;
-  msg("authMessage","Đang đăng nhập...",false);
-  const {error}=await supabaseClient.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
-  if(error)msg("authMessage","Không đăng nhập được. Vui lòng kiểm tra email, mật khẩu hoặc liên hệ quản lý.");
-});
 $("logoutBtn").addEventListener("click",async()=>{await supabaseClient.auth.signOut();currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)});
 async function enterApp(user){
   currentUser=user;
