@@ -56,10 +56,15 @@ test("vehicle intake requires a selected document type and explicit plate confir
   assert.match(app, /!\["quotation", "inspection"\]\.includes\(documentType\)/);
   assert.match(app, /!\$\("intakePlateConfirmed"\)\.checked/);
   assert.match(app, /intakePlateConfirmed"\)\.checked = false;/);
+  assert.ok(app.includes('plate_confirmed: $("intakePlateConfirmed").checked'));
+  assert.match(app, /plate_confirmed,receiver:/);
+  assert.match(app, /Chưa ghi nhận xác nhận biển số/);
 });
 
 test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
   const sql = await read("supabase/migrations/20261105100000_harden_api_security_definers.sql");
+  assert.match(sql, /add column if not exists plate_confirmed boolean/i);
+  assert.match(sql, /and plate_confirmed is true/i);
   assert.match(sql, /create schema if not exists private/i);
   assert.match(sql, /create or replace function private\.is_admin\(\)[\s\S]*?security definer/i);
   assert.match(sql, /create or replace function private\.is_assigned_to_intake\(p_intake_id uuid\)[\s\S]*?security definer/i);
@@ -91,4 +96,3 @@ test("retention removes Storage files before deleting eligible closed intakes", 
   assert.ok(functionSource.indexOf("/storage/v1/object/vehicle-intakes") < functionSource.indexOf("complete_retention_for_intake"));
   assert.match(functionSource, /x-retention-secret/);
 });
-
