@@ -3,6 +3,21 @@ create schema if not exists private;
 revoke all on schema private from public, anon, authenticated, service_role;
 grant usage on schema private to authenticated, service_role;
 
+create or replace function private.is_active_user()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = (select auth.uid()) and active = true
+  );
+$$;
+revoke all on function private.is_active_user() from public, anon;
+grant execute on function private.is_active_user() to authenticated, service_role;
+
 create or replace function private.is_admin()
 returns boolean
 language sql
@@ -183,7 +198,7 @@ with check (private.is_admin() and created_by = (select auth.uid()));
 drop policy if exists "admin sees all tasks employee sees assigned" on public.tasks;
 create policy "admin sees all tasks employee sees assigned" on public.tasks
 for select to authenticated
-using (private.is_admin() or assignee_id = (select auth.uid()));
+using (private.is_admin() or (private.is_active_user() and assignee_id = (select auth.uid())));
 
 drop policy if exists "admin updates tasks" on public.tasks;
 drop policy if exists "assigned employees update task status" on public.tasks;
@@ -197,6 +212,9 @@ as $$
 begin
   if (select auth.uid()) is null then
     raise exception 'Bạn cần đăng nhập.';
+  end if;
+  if not private.is_active_user() then
+    raise exception 'Tài khoản chưa được kích hoạt hoặc đã bị vô hiệu hóa.';
   end if;
   if p_status not in ('todo', 'doing', 'done') then
     raise exception 'Trạng thái không hợp lệ.';
@@ -236,12 +254,14 @@ with check (private.is_primary_admin());
 drop policy if exists "intake station users read own or admin" on public.intake_station_users;
 create policy "intake station users read own or admin"
 on public.intake_station_users for select to authenticated
-using (profile_id = (select auth.uid()) or private.is_admin());
+using (private.is_admin() or (private.is_active_user() and profile_id = (select auth.uid())));
 
 drop policy if exists "intake users create own vehicle intake" on public.vehicle_intakes;
 create policy "intake users create own vehicle intake" on public.vehicle_intakes
 for insert to authenticated
 with check (
+  private.is_active_user()
+  and
   received_by = (select auth.uid())
   and plate_confirmed is true
   and exists (
@@ -255,7 +275,7 @@ with check (
 drop policy if exists "intake users read own and admins read all" on public.vehicle_intakes;
 create policy "intake users read own and admins read all" on public.vehicle_intakes
 for select to authenticated
-using (received_by = (select auth.uid()) or private.is_admin());
+using (private.is_admin() or (private.is_active_user() and received_by = (select auth.uid())));
 
 -- Intake rows are immutable to API clients; remove the obsolete direct-admin update policy.
 drop policy if exists "admins update vehicle intakes" on public.vehicle_intakes;
@@ -263,7 +283,21 @@ drop policy if exists "admins update vehicle intakes" on public.vehicle_intakes;
 drop policy if exists "assigned technicians read vehicle intake" on public.vehicle_intakes;
 create policy "assigned technicians read vehicle intake" on public.vehicle_intakes
 for select to authenticated
-using (private.is_assigned_to_intake(id));
+using (private.is_active_user() and private.is_assigned_to_intake(id));
+
+-- The earlier upload policy only checked for a station mapping and ignored deactivation.
+drop policy if exists "intake users upload own intake images" on storage.objects;
+create policy "intake users upload own intake images" on storage.objects
+for insert to authenticated
+with check (
+  bucket_id = 'vehicle-intakes'
+  and private.is_active_user()
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+  and exists (
+    select 1 from public.intake_station_users s
+    where s.profile_id = (select auth.uid())
+  )
+);
 
 drop policy if exists "intake users and assigned technicians read intake images" on storage.objects;
 create policy "intake users and assigned technicians read intake images" on storage.objects
@@ -271,7 +305,7 @@ for select to authenticated
 using (
   bucket_id = 'vehicle-intakes'
   and (
-    (storage.foldername(name))[1] = (select auth.uid())::text
+    (private.is_active_user() and (storage.foldername(name))[1] = (select auth.uid())::text)
     or exists (
       select 1 from public.profiles p
       where p.id = (select auth.uid()) and p.role = 'admin' and p.active = true
@@ -279,6 +313,7 @@ using (
     or exists (
       select 1 from public.vehicle_intakes vi
       where vi.image_path = storage.objects.name
+        and private.is_active_user()
         and private.is_assigned_to_intake(vi.id)
     )
   )
@@ -291,14 +326,16 @@ using (
   private.is_admin()
   or exists (
     select 1 from public.work_assignments a
-    where a.work_order_id = work_orders.id and a.technician_id = (select auth.uid())
+    where private.is_active_user()
+      and a.work_order_id = work_orders.id
+      and a.technician_id = (select auth.uid())
   )
 );
 
 drop policy if exists "work assignments visible to admins and assignee" on public.work_assignments;
 create policy "work assignments visible to admins and assignee"
 on public.work_assignments for select to authenticated
-using (private.is_admin() or technician_id = (select auth.uid()));
+using (private.is_admin() or (private.is_active_user() and technician_id = (select auth.uid())));
 
 drop policy if exists "assignment events visible to admins and assignee" on public.work_assignment_events;
 create policy "assignment events visible to admins and assignee"
@@ -307,7 +344,9 @@ using (
   private.is_admin()
   or exists (
     select 1 from public.work_assignments a
-    where a.id = assignment_id and a.technician_id = (select auth.uid())
+    where private.is_active_user()
+      and a.id = assignment_id
+      and a.technician_id = (select auth.uid())
   )
 );
 
@@ -318,7 +357,8 @@ using (
   private.is_admin()
   or exists (
     select 1 from public.work_assignments a
-    where a.work_order_id = work_order_events.work_order_id
+    where private.is_active_user()
+      and a.work_order_id = work_order_events.work_order_id
       and a.technician_id = (select auth.uid())
   )
 );
@@ -404,6 +444,9 @@ declare
   order_status text;
 begin
   if (select auth.uid()) is null then raise exception 'Bạn cần đăng nhập.'; end if;
+  if not private.is_active_user() then
+    raise exception 'Tài khoản chưa được kích hoạt hoặc đã bị vô hiệu hóa.';
+  end if;
   if p_status not in ('todo', 'doing', 'paused', 'done') then
     raise exception 'Trạng thái không hợp lệ.';
   end if;
