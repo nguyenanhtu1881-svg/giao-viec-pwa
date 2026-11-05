@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const configured = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("DAN_") && !SUPABASE_ANON_KEY.includes("DAN_");
 const $ = (id) => document.getElementById(id);
-let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null, intakeStationNo = null;
+let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null, intakeStationNo = null, workflowChannel = null, passwordRecoveryPending = false;
 
 const statusText = {todo:"Chưa làm", doing:"Đang làm", done:"Hoàn thành"};
 function isLate(t){return t.status!=="done" && new Date(t.due_at).getTime()<Date.now()}
@@ -19,9 +19,28 @@ async function init(){
   if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
   if(!configured){show("configNotice");return}
   supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+  // Subscribe before reading the stored session so redirect events are not missed.
+  // Defer Supabase queries until this synchronous auth callback has returned.
+  supabaseClient.auth.onAuthStateChange((event,session)=>{
+    if(event==="PASSWORD_RECOVERY")passwordRecoveryPending=true;
+    setTimeout(()=>handleAuthState(event,session),0);
+  });
   const {data:{session}}=await supabaseClient.auth.getSession();
-  if(session) await enterApp(session.user);
-  supabaseClient.auth.onAuthStateChange(async (event,session)=>{if(event==="PASSWORD_RECOVERY"){show("authView",true);show("appView",false);show("passwordResetPanel",true);msg("passwordResetMessage","Đã xác thực liên kết. Hãy nhập mật khẩu mới.",false);return;} if(session && !currentUser) await enterApp(session.user); else if(!session){currentUser=null;profile=null;show("appView",false);show("authView",true);show("logoutBtn",false)}});
+  if(session && !currentUser && !passwordRecoveryPending) await enterApp(session.user);
+}
+async function handleAuthState(event,session){
+  if(event==="PASSWORD_RECOVERY"){
+    passwordRecoveryPending=true;
+    show("authView",true);show("appView",false);show("passwordResetPanel",true);
+    msg("passwordResetMessage","Đã xác thực liên kết. Hãy nhập mật khẩu mới.",false);
+    return;
+  }
+  if(session && !currentUser){await enterApp(session.user);return;}
+  if(!session){
+    if(workflowChannel){await supabaseClient.removeChannel(workflowChannel);workflowChannel=null;}
+    currentUser=null;profile=null;intakeStationNo=null;passwordRecoveryPending=false;
+    show("appView",false);show("authView",true);show("logoutBtn",false);
+  }
 }
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -138,6 +157,8 @@ async function enterApp(user){
     if (currentUser.email === "tu.nguyen@hyundaimiennam.com") await loadAccountAdmin();
     await loadIntakeQueue();
   }
+  show("workOrdersSection", true);
+  await loadWorkOrders();
   const { data: stationData } = await supabaseClient
     .from("intake_station_users")
     .select("station_no")
@@ -149,15 +170,16 @@ async function enterApp(user){
     $("intakeStationLabel").textContent = "Tài khoản được gán Trạm " + intakeStationNo;
   }
   await loadTasks();
+  setupWorkflowRealtime();
 }
 async function loadEmployees(){
-  const {data,error}=await supabaseClient.from("profiles").select("id,full_name,email").eq("active",true).order("full_name");
+  const {data,error}=await supabaseClient.from("profiles").select("id,full_name,email,role,work_role").eq("active",true).order("full_name");
   if(error){msg("taskMessage","Không tải được danh sách nhân viên: "+error.message);return}
   employees=data||[];
   const employeeOptions = employees.map(x=>`<option value="${x.id}">${esc(x.full_name||x.email||"Nhân viên")}</option>`).join("");
   $("assignee").innerHTML='<option value="">Chọn nhân viên</option>'+employeeOptions;
   const stationUser = $("stationUser");
-  if (stationUser) stationUser.innerHTML='<option value="">Chọn tài khoản</option>'+employeeOptions;
+  if (stationUser) stationUser.innerHTML='<option value="">Chọn tài khoản tiếp nhận</option>'+employees.filter(x=>x.work_role==="intake").map(x=>`<option value="${x.id}">${esc(x.full_name||x.email||"Nhân viên")}</option>`).join("");
 }
 
 
@@ -188,6 +210,7 @@ async function loadAccountAdmin() {
       '<div class="task-meta">' + esc(p.email || "") + '</div>' +
       '<div class="task-meta">Quyền hệ thống: ' + (p.role==="admin"?"Admin":"Nhân viên") + (primary?" · Admin chính":"") + '</div>' +
       (primary ? '<p class="small muted">Tài khoản Admin chính được bảo vệ, không thể thay đổi quyền hoặc khóa.</p>' :
+      '<label>Quyền hệ thống<select data-system-role="' + p.id + '"><option value="employee"' + (p.role==="employee"?" selected":"") + '>Nhân viên</option><option value="admin"' + (p.role==="admin"?" selected":"") + '>Admin</option></select></label>' +
       '<label>Vai trò công việc<select data-work-role="' + p.id + '">' + roleOptions + '</select></label>' +
       '<label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" data-active="' + p.id + '"' + (p.active?" checked":"") + '> Kích hoạt tài khoản</label>' +
       '<button class="btn btn-primary" type="button" data-save-account="' + p.id + '" style="margin-top:10px">Lưu phân quyền</button>') +
@@ -199,10 +222,11 @@ async function saveAccountAdmin(id) {
   if (currentUser?.email !== "tu.nguyen@hyundaimiennam.com") return;
   const card = document.querySelector('[data-account-id="' + id + '"]');
   if (!card) return;
+  const role = card.querySelector('[data-system-role]').value;
   const work_role = card.querySelector('[data-work-role]').value;
   const active = card.querySelector('[data-active]').checked;
   const { error } = await supabaseClient.from("profiles")
-    .update({ work_role, active, role: "employee" })
+    .update({ work_role, active, role })
     .eq("id", id)
     .neq("email", "tu.nguyen@hyundaimiennam.com");
   if (error) {
@@ -232,13 +256,129 @@ async function loadIntakeQueue() {
     box.innerHTML = '<div class="empty">Chưa có xe nào được tiếp nhận.</div>';
     return;
   }
+  const activePlateCounts = data.reduce((counts,item)=>{
+    if(item.status!=="closed" && item.plate_number){
+      const key=item.plate_number.toUpperCase().replace(/[^A-Z0-9]/g,"");
+      counts[key]=(counts[key]||0)+1;
+    }
+    return counts;
+  },{});
+  const technicians = employees.filter(x=>x.work_role==="technician");
   const cards = await Promise.all(data.map(async item => {
     const { data: signed } = await supabaseClient.storage.from("vehicle-intakes").createSignedUrl(item.image_path, 300);
-    const image = signed?.signedUrl ? '<a href="' + signed.signedUrl + '" target="_blank" rel="noopener">Mở ảnh phiếu</a>' : "Không tạo được liên kết ảnh";
+    const image = signed?.signedUrl ? '<a href="' + esc(signed.signedUrl) + '" target="_blank" rel="noopener">Mở ảnh phiếu</a>' : "Không tạo được liên kết ảnh";
     const receiver = item.receiver?.full_name || "Nhân viên";
-    return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":"doing") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đã phân công":"Đã đóng") + '</span></div><div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div></article>';
+    const plateKey=(item.plate_number||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    const duplicate=plateKey && item.status!=="closed" && activePlateCounts[plateKey]>1
+      ? '<span class="pill late">Biển số trùng: ' + activePlateCounts[plateKey] + ' xe đang xử lý</span>' : "";
+    const assignForm=item.status==="closed" ? "" : '<form class="assignment-form" data-assign-intake="' + item.id + '">' +
+      '<label>Giao cho kỹ thuật viên<select multiple required data-technician-ids>' + technicians.map(x=>'<option value="'+x.id+'">'+esc(x.full_name||x.email||"Kỹ thuật viên")+'</option>').join("") + '</select></label>' +
+      '<label>Hạn hoàn thành (không bắt buộc)<input type="datetime-local" data-assignment-due></label>' +
+      '<button class="btn btn-primary" type="submit">Tạo / bổ sung phân công</button><p class="message" data-assign-message aria-live="polite"></p></form>';
+    return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":item.status==="assigned"?"doing":"done") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đang xử lý":"Đã hoàn tất") + '</span></div>' + duplicate + '<div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div>' + assignForm + '</article>';
   }));
   box.innerHTML = cards.join("");
+}
+
+async function assignVehicleTechnicians(e){
+  e.preventDefault();
+  if(profile?.role!=="admin")return;
+  const form=e.currentTarget;
+  const selected=[...form.querySelector("[data-technician-ids]").selectedOptions].map(x=>x.value);
+  const message=form.querySelector("[data-assign-message]");
+  if(!selected.length){message.textContent="Chọn ít nhất một kỹ thuật viên.";return;}
+  const dueValue=form.querySelector("[data-assignment-due]").value;
+  const {error}=await supabaseClient.rpc("assign_vehicle_technicians",{
+    p_intake_id:form.dataset.assignIntake,
+    p_technician_ids:selected,
+    p_due_at:dueValue?new Date(dueValue).toISOString():null
+  });
+  if(error){message.textContent="Chưa giao được việc: "+error.message;return;}
+  toast("Đã cập nhật phân công kỹ thuật viên.");
+  await Promise.all([loadIntakeQueue(),loadWorkOrders()]);
+}
+
+const assignmentStatusText={todo:"Chờ làm",doing:"Đang làm",paused:"Tạm dừng",done:"Hoàn thành"};
+async function loadWorkOrders(){
+  const box=$("workOrderList");
+  if(!box||!supabaseClient||!currentUser)return;
+  box.innerHTML='<div class="empty">Đang tải phân công...</div>';
+  let query=supabaseClient.from("work_assignments").select(
+    "id,work_order_id,technician_id,status,pause_reason,due_at,updated_at,technician:profiles!work_assignments_technician_id_fkey(full_name,email),work_order:work_orders!work_assignments_work_order_id_fkey(id,status,completed_at,completed_by,override_reason,vehicle_intake:vehicle_intakes!work_orders_vehicle_intake_id_fkey(id,plate_number,customer_name,vehicle_model,station_no,received_at))"
+  ).order("created_at",{ascending:true});
+  if(profile?.role!=="admin")query=query.eq("technician_id",currentUser.id);
+  const {data,error}=await query;
+  if(error){box.innerHTML='<div class="empty">Không tải được tiến độ phân công.</div>';console.error(error);return;}
+  if(!data?.length){box.innerHTML='<div class="empty">Chưa có phân công kỹ thuật viên.</div>';return;}
+
+  const assignmentIds=data.map(x=>x.id);
+  const [eventResult,orderEventResult]=await Promise.all([
+    supabaseClient.from("work_assignment_events").select("assignment_id,from_status,to_status,pause_reason,created_at,actor:profiles!work_assignment_events_actor_id_fkey(full_name)").in("assignment_id",assignmentIds).order("created_at",{ascending:false}),
+    profile?.role==="admin"
+      ? supabaseClient.from("work_order_events").select("work_order_id,from_status,to_status,reason,created_at,actor:profiles!work_order_events_actor_id_fkey(full_name)").in("work_order_id",[...new Set(data.map(x=>x.work_order_id))]).order("created_at",{ascending:false})
+      : Promise.resolve({data:[],error:null})
+  ]);
+  if(eventResult.error)console.error(eventResult.error);
+  if(orderEventResult.error)console.error(orderEventResult.error);
+  const assignmentEvents=eventResult.data||[];
+  const orderEvents=orderEventResult.data||[];
+  const groups=new Map();
+  for(const assignment of data){
+    if(!groups.has(assignment.work_order_id))groups.set(assignment.work_order_id,{order:assignment.work_order,assignments:[]});
+    groups.get(assignment.work_order_id).assignments.push(assignment);
+  }
+  box.innerHTML=[...groups.entries()].map(([orderId,group])=>{
+    const order=group.order||{};
+    const vehicle=order.vehicle_intake||{};
+    const orderStatus=order.status==="completed_override"?"Hoàn tất ngoại lệ":order.status==="completed"?"Hoàn thành":"Đang xử lý";
+    const assignments=group.assignments.map(a=>{
+      const events=assignmentEvents.filter(ev=>ev.assignment_id===a.id).map(ev=>
+        '<li>'+esc(ev.actor?.full_name||"Người dùng")+' · '+esc(assignmentStatusText[ev.to_status]||ev.to_status)+' · '+esc(fmtDate(ev.created_at))+(ev.pause_reason?' · '+esc(ev.pause_reason):'')+'</li>'
+      ).join("");
+      const currentStatus=a.status;
+      const controls=profile?.role==="admin"?'<span class="pill '+(currentStatus==="done"?"done":currentStatus==="paused"?"todo":"doing")+'">'+esc(assignmentStatusText[currentStatus])+'</span>':
+        order.status==="active"?'<label>Trạng thái<select data-work-status="'+a.id+'" data-current-status="'+a.status+'">'+Object.entries(assignmentStatusText).map(([key,label])=>'<option value="'+key+'"'+(a.status===key?' selected':'')+'>'+label+'</option>').join("")+'</select></label><label>Lý do tạm dừng<input data-pause-reason="'+a.id+'" maxlength="500" value="'+esc(a.status==="paused"?a.pause_reason||"":"")+'" placeholder="Bắt buộc khi chọn tạm dừng"></label>':'<span class="pill done">'+esc(assignmentStatusText[currentStatus])+'</span>';
+      return '<article class="assignment-card"><div class="task-top"><strong>'+esc(a.technician?.full_name||a.technician?.email||"Kỹ thuật viên")+'</strong>'+controls+'</div><div class="task-meta">'+(a.due_at?'Hạn: '+esc(fmtDate(a.due_at)):'Chưa đặt hạn')+' · Cập nhật '+esc(fmtDate(a.updated_at))+'</div><details><summary>Lịch sử trạng thái</summary><ol>'+events+'</ol></details></article>';
+    }).join("");
+    const completionEvents=orderEvents.filter(ev=>ev.work_order_id===orderId).map(ev=>'<li>'+esc(ev.actor?.full_name||"Hệ thống")+' · '+esc(ev.to_status==="completed_override"?"Admin hoàn tất ngoại lệ":ev.to_status==="completed"?"Xe hoàn thành":"Đang xử lý")+' · '+esc(fmtDate(ev.created_at))+(ev.reason?' · '+esc(ev.reason):'')+'</li>').join("");
+    const override=profile?.role==="admin"&&order.status==="active"?'<button class="btn btn-light" type="button" data-complete-order="'+orderId+'">Admin xác nhận hoàn thành ngoại lệ</button>':'';
+    return '<article class="work-order-card"><div class="task-top"><div><strong>'+esc(vehicle.plate_number||"Xe chưa rõ biển số")+'</strong><div class="task-meta">Trạm '+esc(vehicle.station_no||"")+' · '+esc(vehicle.customer_name||"")+' '+esc(vehicle.vehicle_model||"")+'</div></div><span class="pill '+(order.status==="active"?"doing":"done")+'">'+orderStatus+'</span></div><div class="assignment-list">'+assignments+'</div>'+override+(profile?.role==="admin"?'<details><summary>Lịch sử work order</summary><ol>'+completionEvents+'</ol></details>':'')+'</article>';
+  }).join("");
+}
+
+async function updateWorkAssignment(e){
+  const select=e.target.closest("[data-work-status]");
+  if(!select)return;
+  const card=select.closest(".assignment-card");
+  const reason=card.querySelector("[data-pause-reason]")?.value.trim()||"";
+  if(select.value==="paused"&&!reason){toast("Hãy ghi lý do trước khi tạm dừng.");select.value=select.dataset.currentStatus;return;}
+  const {error}=await supabaseClient.rpc("set_work_assignment_status",{
+    p_assignment_id:select.dataset.workStatus,p_status:select.value,p_pause_reason:reason||null
+  });
+  if(error){toast("Chưa cập nhật được trạng thái.");console.error(error);await loadWorkOrders();return;}
+  toast("Đã cập nhật trạng thái.");
+  await Promise.all([loadWorkOrders(),loadIntakeQueue()]);
+}
+
+async function completeWorkOrderOverride(e){
+  const button=e.target.closest("[data-complete-order]");
+  if(!button||profile?.role!=="admin")return;
+  const reason=window.prompt("Nhập lý do Admin xác nhận hoàn thành ngoại lệ:")?.trim();
+  if(!reason)return;
+  const {error}=await supabaseClient.rpc("admin_complete_work_order",{p_work_order_id:button.dataset.completeOrder,p_reason:reason});
+  if(error){toast("Chưa xác nhận hoàn thành được.");console.error(error);return;}
+  toast("Đã ghi nhận hoàn thành ngoại lệ.");
+  await Promise.all([loadWorkOrders(),loadIntakeQueue()]);
+}
+
+function setupWorkflowRealtime(){
+  if(!supabaseClient||!currentUser)return;
+  if(workflowChannel)supabaseClient.removeChannel(workflowChannel);
+  workflowChannel=supabaseClient.channel("vehicle-workflow-"+currentUser.id)
+    .on("postgres_changes",{event:"*",schema:"public",table:"work_assignments"},()=>loadWorkOrders())
+    .on("postgres_changes",{event:"*",schema:"public",table:"work_orders"},()=>{loadWorkOrders();if(profile?.role==="admin")loadIntakeQueue();})
+    .on("postgres_changes",{event:"*",schema:"public",table:"vehicle_intakes"},()=>{if(profile?.role==="admin")loadIntakeQueue();})
+    .subscribe();
 }
 
 async function runIntakeOcr() {
@@ -401,5 +541,10 @@ $("ocrButton")?.addEventListener("click", runIntakeOcr);
 $("intakeForm")?.addEventListener("submit", submitVehicleIntake);
 $("stationAdminForm")?.addEventListener("submit", saveIntakeStation);
 $("refreshIntakes")?.addEventListener("click", loadIntakeQueue);
+$("refreshWorkOrders")?.addEventListener("click", loadWorkOrders);
+$("intakeQueue")?.addEventListener("submit", assignVehicleTechnicians);
+$("workOrderList")?.addEventListener("change", updateWorkAssignment);
+$("workOrderList")?.addEventListener("click", completeWorkOrderOverride);
 
 init();
+

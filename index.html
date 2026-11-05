@@ -141,6 +141,12 @@
         <div id="intakeQueue" class="task-list"><div class="empty">Chưa có hồ sơ tiếp nhận.</div></div>
       </section>
 
+      <section id="workOrdersSection" class="panel hidden">
+        <div class="section-heading"><div><div class="eyebrow">ĐIỀU PHỐI</div><h2>Tiến độ kỹ thuật viên</h2></div><button id="refreshWorkOrders" class="btn btn-light" type="button">↻ Làm mới</button></div>
+        <p class="muted small">Mỗi kỹ thuật viên cập nhật trạng thái riêng. Tạm dừng cần ghi lý do.</p>
+        <div id="workOrderList" class="task-list"><div class="empty">Đang tải phân công...</div></div>
+      </section>
+
       <section id="createSection" class="panel hidden">
         <div class="section-heading"><div><div class="eyebrow">QUẢN LÝ</div><h2>Giao việc mới</h2></div></div>
         <form id="taskForm" class="task-form">
@@ -179,3 +185,4 @@
   <script src="./app.js"></script>
 </body>
 </html>
+

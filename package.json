@@ -1,0 +1,8 @@
+{
+  "name": "giao-viec-pwa",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
+

@@ -1,0 +1,3 @@
+[functions.retention-cleanup]
+verify_jwt = false
+

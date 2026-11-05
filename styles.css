@@ -5,3 +5,12 @@
 .intake-preview{display:block;width:100%;max-height:320px;object-fit:contain;border:1px solid var(--line);border-radius:12px;background:#f8fafc}
 .intake-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff}
 .intake-card strong{font-size:16px}.intake-card .task-meta{margin-top:7px}
+.assignment-form{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.assignment-form select[multiple]{min-height:110px}
+.work-order-card{border:1px solid var(--line);border-radius:13px;padding:15px;display:grid;gap:12px}
+.assignment-list{display:grid;gap:8px}
+.assignment-card{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;background:#fbfcfe}
+.assignment-card label{margin-top:4px}
+details summary{cursor:pointer;color:var(--blue);font-size:13px;font-weight:700}
+details ol{margin:8px 0 0;padding-left:22px;color:var(--muted);font-size:12px;line-height:1.6}
+
