@@ -156,6 +156,10 @@ try {
     [users[6][0]],
   );
   assert.equal(secondaryAdminUpdate.rows.length, 0, "a secondary admin must not manage accounts");
+  const adminQueue = await database.query("select count(*)::int as n from public.vehicle_intakes");
+  const adminStations = await database.query("select count(*)::int as n from public.intake_station_users");
+  assert.equal(adminQueue.rows[0].n, 1, "admins must read the intake queue after helper hardening");
+  assert.equal(adminStations.rows[0].n, 1, "admins must read station mappings after helper hardening");
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[0][0]]);
   const primaryAdminUpdate = await database.query(
     "update public.profiles set active=true,work_role='intake' where id=$1 returning id",
@@ -169,7 +173,7 @@ try {
   await database.exec("reset role");
   const protectedPrimary = await database.query("select role,active from public.profiles where id=$1", [users[0][0]]);
   assert.deepEqual(protectedPrimary.rows[0], { role: "admin", active: true });
-  console.log("PASS pending signup and primary-admin-only account control");
+  console.log("PASS pending signup, primary-admin-only account control, and admin queue reads");
 
   const intakeUser = users[2][0];
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [intakeUser]);
