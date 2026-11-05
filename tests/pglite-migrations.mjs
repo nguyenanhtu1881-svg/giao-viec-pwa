@@ -130,6 +130,7 @@ try {
     select not has_function_privilege('anon','public.is_admin()','EXECUTE') as anon_cannot_call_is_admin,
            not has_function_privilege('authenticated','public.is_admin()','EXECUTE') as users_cannot_call_is_admin,
            has_function_privilege('authenticated','private.is_admin()','EXECUTE') as users_can_use_private_admin_helper,
+           has_function_privilege('authenticated','private.is_active_user()','EXECUTE') as users_can_use_private_active_helper,
            has_function_privilege('authenticated','public.update_task_status(uuid,text)','EXECUTE') as users_can_use_task_rpc,
            not has_function_privilege('anon','public.update_task_status(uuid,text)','EXECUTE') as anon_cannot_use_task_rpc,
            not has_function_privilege('authenticated','public.claim_expired_vehicle_intakes(integer)','EXECUTE') as users_cannot_claim_retention,
@@ -157,6 +158,21 @@ try {
     update public.profiles set active=true where id='${users[5][0]}';
     insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1) on conflict (profile_id) do nothing;
   `);
+
+  const inactiveTask = await database.query(`insert into public.tasks(title,due_at,assignee_id,created_by)
+    values ('Không hoạt động',now()+interval '1 day',$1,$2) returning id`, [users[5][0], users[0][0]]);
+  await database.query("update public.profiles set active=false where id=$1", [users[5][0]]);
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[5][0]]);
+  await database.exec("set role authenticated");
+  await assert.rejects(
+    database.query("select public.update_task_status($1,'doing')", [inactiveTask.rows[0].id]),
+    /vô hiệu hóa/i,
+  );
+  const inactiveTaskRows = await database.query("select id from public.tasks where id=$1", [inactiveTask.rows[0].id]);
+  assert.equal(inactiveTaskRows.rows.length, 0, "deactivated users must not read assigned tasks in an open session");
+  await database.exec("reset role");
+  await database.query("update public.profiles set active=true where id=$1", [users[5][0]]);
+  console.log("PASS deactivation blocks task reads and status writes in an existing session");
 
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[5][0]]);
   await database.exec("set role authenticated");
@@ -196,6 +212,22 @@ try {
   console.log("PASS pending signup, primary-admin-only account control, and admin queue reads");
 
   const intakeUser = users[2][0];
+  await database.query("update public.profiles set active=false where id=$1", [intakeUser]);
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [intakeUser]);
+  await database.exec("set role authenticated");
+  await assert.rejects(
+    database.query("insert into storage.objects(bucket_id,name) values ('vehicle-intakes',$1)", [`${intakeUser}/inactive.jpg`]),
+    /row-level security|violates row-level security/i,
+  );
+  await assert.rejects(
+    database.query(`insert into public.vehicle_intakes(plate_number,document_type,image_path,station_no,received_by,plate_confirmed)
+      values ('51A-000.00','quotation','${intakeUser}/inactive.jpg',1,'${intakeUser}',true)`),
+    /row-level security|violates row-level security/i,
+  );
+  await database.exec("reset role");
+  await database.query("update public.profiles set active=true where id=$1", [intakeUser]);
+  console.log("PASS deactivated intake users cannot upload images or create records in an existing session");
+
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [intakeUser]);
   await database.exec("set role authenticated");
   await assert.rejects(
@@ -233,6 +265,20 @@ try {
   );
   assert.equal(assignments.rows.length, 2);
   const assignmentByTech = new Map(assignments.rows.map((row) => [row.technician_id, row.id]));
+  await database.exec("reset role");
+  await database.query("update public.profiles set active=false where id=$1", [users[3][0]]);
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[3][0]]);
+  await database.exec("set role authenticated");
+  await assert.rejects(
+    database.query("select public.set_work_assignment_status($1,'doing',null)", [assignmentByTech.get(users[3][0])]),
+    /vô hiệu hóa/i,
+  );
+  const hiddenInactiveOrder = await database.query("select id from public.work_orders where id=$1", [orderId]);
+  assert.equal(hiddenInactiveOrder.rows.length, 0, "deactivated technicians must lose work order access immediately");
+  await database.exec("reset role");
+  await database.query("update public.profiles set active=true where id=$1", [users[3][0]]);
+  await database.exec("set role authenticated");
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [adminId]);
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[3][0]]);
   const visibleImage = await database.query("select count(*)::int as n from storage.objects where name=$1", [`${intakeUser}/good.jpg`]);
   assert.equal(visibleImage.rows[0].n, 1, "an assigned technician must read the intake image");
