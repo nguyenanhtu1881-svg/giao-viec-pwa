@@ -55,21 +55,6 @@ $$;
 revoke all on function private.is_assigned_to_intake(uuid) from public, anon;
 grant execute on function private.is_assigned_to_intake(uuid) to authenticated;
 
-create or replace function private.assignment_due_at_unchanged(p_assignment_id uuid, p_due_at timestamptz)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select exists (
-    select 1 from public.work_assignments
-    where id = p_assignment_id and due_at is not distinct from p_due_at
-  );
-$$;
-revoke all on function private.assignment_due_at_unchanged(uuid, timestamptz) from public, anon;
-grant execute on function private.assignment_due_at_unchanged(uuid, timestamptz) to authenticated;
-
 -- Remove broad default/table and per-column grants before restoring app-required access.
 revoke all privileges on table public.profiles, public.tasks,
   public.intake_station_users, public.vehicle_intakes,
@@ -102,22 +87,13 @@ grant select on public.profiles, public.tasks, public.intake_station_users,
 grant update (role, active, work_role) on public.profiles to authenticated;
 grant insert (title, notes, priority, due_at, assignee_id, created_by)
   on public.tasks to authenticated;
-grant update (status) on public.tasks to authenticated;
 grant insert (profile_id, station_no) on public.intake_station_users to authenticated;
 grant update (profile_id, station_no) on public.intake_station_users to authenticated;
 grant insert (plate_number, customer_name, vehicle_model, chassis_number,
   document_type, image_path, station_no, received_by)
   on public.vehicle_intakes to authenticated;
-grant update (status) on public.vehicle_intakes to authenticated;
 
--- Allow workflow RPCs to use caller rights with explicit row and column guards.
-grant insert (vehicle_intake_id, created_by) on public.work_orders to authenticated;
-grant update (status, completed_at, completed_by, override_reason)
-  on public.work_orders to authenticated;
-grant insert (work_order_id, technician_id, assigned_by, due_at)
-  on public.work_assignments to authenticated;
-grant update (status, pause_reason, due_at)
-  on public.work_assignments to authenticated;
+-- Task and workflow writes go through validated private SECURITY DEFINER RPCs.
 
 create or replace function public.touch_task_updated_at()
 returns trigger
@@ -152,35 +128,8 @@ before update of status, pause_reason, due_at on public.work_assignments
 for each row execute function public.touch_work_assignment_updated_at();
 
 drop policy if exists "admins manage work orders" on public.work_orders;
-create policy "admins manage work orders" on public.work_orders
-for all to authenticated
-using (private.is_admin())
-with check (private.is_admin());
-
 drop policy if exists "admins manage work assignments" on public.work_assignments;
-create policy "admins manage work assignments" on public.work_assignments
-for all to authenticated
-using (private.is_admin())
-with check (private.is_admin());
-
 drop policy if exists "assigned technicians update own active assignment" on public.work_assignments;
-create policy "assigned technicians update own active assignment" on public.work_assignments
-for update to authenticated
-using (
-  technician_id = (select auth.uid())
-  and exists (
-    select 1 from public.work_orders o
-    where o.id = work_assignments.work_order_id and o.status = 'active'
-  )
-)
-with check (
-  technician_id = (select auth.uid())
-  and exists (
-    select 1 from public.work_orders o
-    where o.id = work_assignments.work_order_id and o.status = 'active'
-  )
-  and private.assignment_due_at_unchanged(id, due_at)
-);
 
 -- Serialize assignment writes with completion/retention so closed work cannot reopen.
 create or replace function public.guard_active_work_order_assignment()
@@ -229,22 +178,12 @@ for select to authenticated
 using (private.is_admin() or assignee_id = (select auth.uid()));
 
 drop policy if exists "admin updates tasks" on public.tasks;
-create policy "admin updates tasks" on public.tasks
-for update to authenticated
-using (private.is_admin())
-with check (private.is_admin());
-
 drop policy if exists "assigned employees update task status" on public.tasks;
-create policy "assigned employees update task status" on public.tasks
-for update to authenticated
-using (assignee_id = (select auth.uid()))
-with check (assignee_id = (select auth.uid()));
 
--- The status RPC runs with caller privileges and can only update these columns.
-create or replace function public.update_task_status(p_task_id uuid, p_status text)
+create or replace function private.update_task_status(p_task_id uuid, p_status text)
 returns void
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 begin
@@ -264,6 +203,17 @@ begin
     raise exception 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.';
   end if;
 end;
+$$;
+revoke all on function private.update_task_status(uuid, text) from public, anon;
+grant execute on function private.update_task_status(uuid, text) to authenticated;
+
+create or replace function public.update_task_status(p_task_id uuid, p_status text)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.update_task_status(p_task_id, p_status);
 $$;
 revoke all on function public.update_task_status(uuid, text) from public, anon;
 grant execute on function public.update_task_status(uuid, text) to authenticated;
@@ -337,15 +287,14 @@ using (
   )
 );
 
--- Workflow RPCs run as the caller and are constrained by table grants and RLS.
-create or replace function public.assign_vehicle_technicians(
+create or replace function private.assign_vehicle_technicians(
   p_intake_id uuid,
   p_technician_ids uuid[],
   p_due_at timestamptz default null
 )
 returns uuid
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -403,14 +352,14 @@ begin
 end;
 $$;
 
-create or replace function public.set_work_assignment_status(
+create or replace function private.set_work_assignment_status(
   p_assignment_id uuid,
   p_status text,
   p_pause_reason text default null
 )
 returns void
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -426,21 +375,24 @@ begin
     raise exception 'Cần ghi lý do khi tạm dừng.';
   end if;
 
-  select a.work_order_id, a.technician_id, o.status
-    into target_order_id, assigned_technician, order_status
-  from public.work_assignments a
-  join public.work_orders o on o.id = a.work_order_id
-  where a.id = p_assignment_id
-  ;
-
+  select work_order_id into target_order_id
+  from public.work_assignments where id = p_assignment_id;
   if not found then raise exception 'Không tìm thấy phân công.'; end if;
-  if not private.is_admin() and assigned_technician <> (select auth.uid()) then
-    raise exception 'Bạn không được phân công công việc này.';
-  end if;
+
+  -- Lock the work order before the assignment to serialize with assignment and completion RPCs.
+  select status into order_status
+  from public.work_orders where id = target_order_id for update;
+  if not found then raise exception 'Không tìm thấy work order.'; end if;
   if order_status <> 'active' then
     raise exception 'Work order đã hoàn tất và không nhận cập nhật trạng thái.';
   end if;
 
+  select technician_id into assigned_technician
+  from public.work_assignments where id = p_assignment_id for update;
+  if not found then raise exception 'Không tìm thấy phân công.'; end if;
+  if not private.is_admin() and assigned_technician <> (select auth.uid()) then
+    raise exception 'Bạn không được phân công công việc này.';
+  end if;
   update public.work_assignments
      set status = p_status,
          pause_reason = case when p_status = 'paused' then btrim(p_pause_reason) else null end
@@ -448,10 +400,10 @@ begin
 end;
 $$;
 
-create or replace function public.admin_complete_work_order(p_work_order_id uuid, p_reason text)
+create or replace function private.admin_complete_work_order(p_work_order_id uuid, p_reason text)
 returns void
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -478,5 +430,54 @@ $$;
 revoke all on function public.is_admin() from public, anon, authenticated;
 revoke all on function public.is_primary_admin() from public, anon, authenticated;
 revoke all on function public.is_assigned_to_intake(uuid) from public, anon, authenticated;
+
+create or replace function public.assign_vehicle_technicians(
+  p_intake_id uuid,
+  p_technician_ids uuid[],
+  p_due_at timestamptz default null
+)
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.assign_vehicle_technicians(p_intake_id, p_technician_ids, p_due_at);
+$$;
+
+create or replace function public.set_work_assignment_status(
+  p_assignment_id uuid,
+  p_status text,
+  p_pause_reason text default null
+)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.set_work_assignment_status(p_assignment_id, p_status, p_pause_reason);
+$$;
+
+create or replace function public.admin_complete_work_order(p_work_order_id uuid, p_reason text)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.admin_complete_work_order(p_work_order_id, p_reason);
+$$;
+
+revoke all on function private.assign_vehicle_technicians(uuid, uuid[], timestamptz) from public, anon;
+revoke all on function private.set_work_assignment_status(uuid, text, text) from public, anon;
+revoke all on function private.admin_complete_work_order(uuid, text) from public, anon;
+grant execute on function private.assign_vehicle_technicians(uuid, uuid[], timestamptz) to authenticated;
+grant execute on function private.set_work_assignment_status(uuid, text, text) to authenticated;
+grant execute on function private.admin_complete_work_order(uuid, text) to authenticated;
+
+revoke all on function public.assign_vehicle_technicians(uuid, uuid[], timestamptz) from public, anon;
+revoke all on function public.set_work_assignment_status(uuid, text, text) from public, anon;
+revoke all on function public.admin_complete_work_order(uuid, text) from public, anon;
+grant execute on function public.assign_vehicle_technicians(uuid, uuid[], timestamptz) to authenticated;
+grant execute on function public.set_work_assignment_status(uuid, text, text) to authenticated;
+grant execute on function public.admin_complete_work_order(uuid, text) to authenticated;
 
 

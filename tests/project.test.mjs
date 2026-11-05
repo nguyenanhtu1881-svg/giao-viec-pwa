@@ -39,6 +39,16 @@ test("workflow SQL keeps assignments independent and pauses auditable", async ()
   assert.match(sql, /revoke all on function public\.set_work_assignment_status\(uuid, text, text\) from public, anon/i);
 });
 
+test("intake assignment uses a touch-friendly multi-technician checkbox list", async () => {
+  const app = await read("app.js");
+  const styles = await read("styles.css");
+  assert.match(app, /technician-picker/);
+  assert.match(app, /type="checkbox" data-technician-id/);
+  assert.match(app, /querySelectorAll\("\[data-technician-id\]:checked"\)/);
+  assert.match(styles, /\.technician-option\{display:flex/);
+  assert.match(styles, /min-height:44px/);
+});
+
 test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
   const sql = await read("supabase/migrations/20261105100000_harden_api_security_definers.sql");
   assert.match(sql, /create schema if not exists private/i);
@@ -46,13 +56,18 @@ test("API hardening keeps authorization helpers private and writes least-privile
   assert.match(sql, /create or replace function private\.is_assigned_to_intake\(p_intake_id uuid\)[\s\S]*?security definer/i);
   assert.match(sql, /revoke all on function public\.is_admin\(\) from public, anon, authenticated/i);
   assert.match(sql, /revoke all on function public\.is_assigned_to_intake\(uuid\) from public, anon, authenticated/i);
-  assert.match(sql, /create or replace function public\.update_task_status[\s\S]*?language plpgsql\s+security invoker\s+set search_path/i);
+  assert.match(sql, /create or replace function private\.update_task_status[\s\S]*?language plpgsql\s+security definer/i);
+  assert.match(sql, /create or replace function public\.update_task_status[\s\S]*?language sql\s+security invoker/i);
   assert.match(sql, /revoke all privileges on table public\.profiles, public\.tasks[\s\S]*?public\.work_order_events\s+from public, anon, authenticated/i);
   assert.match(sql, /revoke all privileges \(id, title, notes, status, priority, due_at, assignee_id, created_by, created_at, updated_at\)\s+on table public\.tasks from public, anon, authenticated/i);
-  assert.match(sql, /grant update \(status\) on public\.tasks to authenticated/i);
-  assert.match(sql, /private\.assignment_due_at_unchanged\(id, due_at\)/i);
-  assert.match(sql, /create trigger touch_work_assignment_updated_at/i);
-  assert.match(sql, /create policy "assigned technicians update own active assignment"/i);
+  assert.doesNotMatch(sql, /grant\s+(?:insert|update|delete|truncate)[^;]+on public\.work_(?:orders|assignments)\s+to authenticated/i);
+  assert.doesNotMatch(sql, /create policy "assigned technicians update own active assignment"/i);
+  assert.match(sql, /create or replace function private\.assign_vehicle_technicians[\s\S]*?security definer/i);
+  assert.match(sql, /create or replace function public\.assign_vehicle_technicians[\s\S]*?language sql\s+security invoker/i);
+  assert.match(sql, /create or replace function private\.set_work_assignment_status[\s\S]*?security definer/i);
+  assert.match(sql, /create or replace function public\.set_work_assignment_status[\s\S]*?language sql\s+security invoker/i);
+  assert.match(sql, /create or replace function private\.admin_complete_work_order[\s\S]*?security definer/i);
+  assert.match(sql, /create or replace function public\.admin_complete_work_order[\s\S]*?language sql\s+security invoker/i);
 });
 
 test("retention removes Storage files before deleting eligible closed intakes", async () => {

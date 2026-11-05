@@ -271,8 +271,9 @@ async function loadIntakeQueue() {
     const plateKey=(item.plate_number||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
     const duplicate=plateKey && item.status!=="closed" && activePlateCounts[plateKey]>1
       ? '<span class="pill late">Biển số trùng: ' + activePlateCounts[plateKey] + ' xe đang xử lý</span>' : "";
+    const technicianChoices=technicians.map(x=>'<label class="technician-option"><input type="checkbox" data-technician-id value="'+x.id+'"><span>'+esc(x.full_name||x.email||"Kỹ thuật viên")+'</span></label>').join("");
     const assignForm=item.status==="closed" ? "" : '<form class="assignment-form" data-assign-intake="' + item.id + '">' +
-      '<label>Giao cho kỹ thuật viên<select multiple required data-technician-ids>' + technicians.map(x=>'<option value="'+x.id+'">'+esc(x.full_name||x.email||"Kỹ thuật viên")+'</option>').join("") + '</select></label>' +
+      '<fieldset class="technician-picker"><legend>Giao cho kỹ thuật viên (có thể chọn nhiều người)</legend><div class="technician-options">' + technicianChoices + '</div></fieldset>' +
       '<label>Hạn hoàn thành (không bắt buộc)<input type="datetime-local" data-assignment-due></label>' +
       '<button class="btn btn-primary" type="submit">Tạo / bổ sung phân công</button><p class="message" data-assign-message aria-live="polite"></p></form>';
     return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":item.status==="assigned"?"doing":"done") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đang xử lý":"Đã hoàn tất") + '</span></div>' + duplicate + '<div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div>' + assignForm + '</article>';
@@ -284,7 +285,7 @@ async function assignVehicleTechnicians(e){
   e.preventDefault();
   if(profile?.role!=="admin")return;
   const form=e.currentTarget;
-  const selected=[...form.querySelector("[data-technician-ids]").selectedOptions].map(x=>x.value);
+  const selected=[...form.querySelectorAll("[data-technician-id]:checked")].map(x=>x.value);
   const message=form.querySelector("[data-assign-message]");
   if(!selected.length){message.textContent="Chọn ít nhất một kỹ thuật viên.";return;}
   const dueValue=form.querySelector("[data-assignment-due]").value;
