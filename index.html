@@ -96,8 +96,8 @@
           <img id="intakePreview" class="intake-preview hidden" alt="Ảnh phiếu đã chọn">
           <div class="two-col">
             <label>Loại phiếu
-              <select id="intakeDocumentType">
-                <option value="unknown">Để hệ thống nhận diện</option>
+              <select id="intakeDocumentType" required>
+                <option value="" selected disabled>Chọn loại phiếu</option>
                 <option value="quotation">Báo giá sửa chữa</option>
                 <option value="inspection">Phiếu kiểm tra tiếp nhận</option>
               </select>
@@ -106,6 +106,7 @@
               <input id="intakePlate" maxlength="16" placeholder="VD: 50H-123.45" required>
             </label>
           </div>
+          <label class="plate-confirmation"><input id="intakePlateConfirmed" type="checkbox" required> Tôi đã đối chiếu và xác nhận biển số trên ảnh</label>
           <button id="ocrButton" class="btn btn-light" type="button">Đọc thử thông tin trên ảnh</button>
           <p id="ocrMessage" class="message" aria-live="polite"></p>
           <div class="two-col">
@@ -139,6 +140,12 @@
       <section id="intakeQueueSection" class="panel hidden">
         <div class="section-heading"><div><div class="eyebrow">QUẢN LÝ</div><h2>Hàng đợi xe tiếp nhận</h2></div><button id="refreshIntakes" class="btn btn-light" type="button">↻ Làm mới</button></div>
         <div id="intakeQueue" class="task-list"><div class="empty">Chưa có hồ sơ tiếp nhận.</div></div>
+      </section>
+
+      <section id="workOrdersSection" class="panel hidden">
+        <div class="section-heading"><div><div class="eyebrow">ĐIỀU PHỐI</div><h2>Tiến độ kỹ thuật viên</h2></div><button id="refreshWorkOrders" class="btn btn-light" type="button">↻ Làm mới</button></div>
+        <p class="muted small">Mỗi kỹ thuật viên cập nhật trạng thái riêng. Tạm dừng cần ghi lý do.</p>
+        <div id="workOrderList" class="task-list"><div class="empty">Đang tải phân công...</div></div>
       </section>
 
       <section id="createSection" class="panel hidden">
@@ -179,3 +186,4 @@
   <script src="./app.js"></script>
 </body>
 </html>
+
