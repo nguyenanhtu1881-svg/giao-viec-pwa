@@ -43,11 +43,15 @@ test("API hardening keeps authorization helpers private and writes least-privile
   const sql = await read("supabase/migrations/20261105100000_harden_api_security_definers.sql");
   assert.match(sql, /create schema if not exists private/i);
   assert.match(sql, /create or replace function private\.is_admin\(\)[\s\S]*?security definer/i);
+  assert.match(sql, /create or replace function private\.is_assigned_to_intake\(p_intake_id uuid\)[\s\S]*?security definer/i);
   assert.match(sql, /revoke all on function public\.is_admin\(\) from public, anon, authenticated/i);
-  assert.match(sql, /create or replace function public\.update_task_status[\s\S]*?language plpgsql\s+set search_path/i);
+  assert.match(sql, /revoke all on function public\.is_assigned_to_intake\(uuid\) from public, anon, authenticated/i);
+  assert.match(sql, /create or replace function public\.update_task_status[\s\S]*?language plpgsql\s+security invoker\s+set search_path/i);
   assert.match(sql, /revoke all privileges on table public\.profiles, public\.tasks[\s\S]*?public\.work_order_events\s+from public, anon, authenticated/i);
   assert.match(sql, /revoke all privileges \(id, title, notes, status, priority, due_at, assignee_id, created_by, created_at, updated_at\)\s+on table public\.tasks from public, anon, authenticated/i);
-  assert.match(sql, /grant update \(status, updated_at\)\s+on public\.tasks to authenticated/i);
+  assert.match(sql, /grant update \(status\) on public\.tasks to authenticated/i);
+  assert.match(sql, /private\.assignment_due_at_unchanged\(id, due_at\)/i);
+  assert.match(sql, /create trigger touch_work_assignment_updated_at/i);
   assert.match(sql, /create policy "assigned technicians update own active assignment"/i);
 });
 

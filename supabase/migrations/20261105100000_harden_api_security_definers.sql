@@ -1,6 +1,6 @@
 -- Keep SECURITY DEFINER authorization helpers out of PostgREST's exposed schema.
 create schema if not exists private;
-revoke all on schema private from public, anon;
+revoke all on schema private from public, anon, authenticated, service_role;
 grant usage on schema private to authenticated, service_role;
 
 create or replace function private.is_admin()
@@ -37,6 +37,39 @@ revoke all on function private.is_primary_admin() from public, anon;
 grant execute on function private.is_admin() to authenticated, service_role;
 grant execute on function private.is_primary_admin() to authenticated, service_role;
 
+create or replace function private.is_assigned_to_intake(p_intake_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.work_orders wo
+    join public.work_assignments wa on wa.work_order_id = wo.id
+    where wo.vehicle_intake_id = p_intake_id
+      and wa.technician_id = (select auth.uid())
+  );
+$$;
+revoke all on function private.is_assigned_to_intake(uuid) from public, anon;
+grant execute on function private.is_assigned_to_intake(uuid) to authenticated;
+
+create or replace function private.assignment_due_at_unchanged(p_assignment_id uuid, p_due_at timestamptz)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.work_assignments
+    where id = p_assignment_id and due_at is not distinct from p_due_at
+  );
+$$;
+revoke all on function private.assignment_due_at_unchanged(uuid, timestamptz) from public, anon;
+grant execute on function private.assignment_due_at_unchanged(uuid, timestamptz) to authenticated;
+
 -- Remove broad default/table and per-column grants before restoring app-required access.
 revoke all privileges on table public.profiles, public.tasks,
   public.intake_station_users, public.vehicle_intakes,
@@ -69,7 +102,7 @@ grant select on public.profiles, public.tasks, public.intake_station_users,
 grant update (role, active, work_role) on public.profiles to authenticated;
 grant insert (title, notes, priority, due_at, assignee_id, created_by)
   on public.tasks to authenticated;
-grant update (status, updated_at) on public.tasks to authenticated;
+grant update (status) on public.tasks to authenticated;
 grant insert (profile_id, station_no) on public.intake_station_users to authenticated;
 grant update (profile_id, station_no) on public.intake_station_users to authenticated;
 grant insert (plate_number, customer_name, vehicle_model, chassis_number,
@@ -83,8 +116,40 @@ grant update (status, completed_at, completed_by, override_reason)
   on public.work_orders to authenticated;
 grant insert (work_order_id, technician_id, assigned_by, due_at)
   on public.work_assignments to authenticated;
-grant update (status, pause_reason, due_at, updated_at)
+grant update (status, pause_reason, due_at)
   on public.work_assignments to authenticated;
+
+create or replace function public.touch_task_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+revoke all on function public.touch_task_updated_at() from public, anon, authenticated;
+drop trigger if exists touch_task_updated_at on public.tasks;
+create trigger touch_task_updated_at
+before update of status on public.tasks
+for each row execute function public.touch_task_updated_at();
+
+create or replace function public.touch_work_assignment_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+revoke all on function public.touch_work_assignment_updated_at() from public, anon, authenticated;
+drop trigger if exists touch_work_assignment_updated_at on public.work_assignments;
+create trigger touch_work_assignment_updated_at
+before update of status, pause_reason, due_at on public.work_assignments
+for each row execute function public.touch_work_assignment_updated_at();
 
 drop policy if exists "admins manage work orders" on public.work_orders;
 create policy "admins manage work orders" on public.work_orders
@@ -114,6 +179,7 @@ with check (
     select 1 from public.work_orders o
     where o.id = work_assignments.work_order_id and o.status = 'active'
   )
+  and private.assignment_due_at_unchanged(id, due_at)
 );
 
 -- Serialize assignment writes with completion/retention so closed work cannot reopen.
@@ -178,6 +244,7 @@ with check (assignee_id = (select auth.uid()));
 create or replace function public.update_task_status(p_task_id uuid, p_status text)
 returns void
 language plpgsql
+security invoker
 set search_path = ''
 as $$
 begin
@@ -189,7 +256,7 @@ begin
   end if;
 
   update public.tasks
-     set status = p_status, updated_at = now()
+     set status = p_status
    where id = p_task_id
      and (private.is_admin() or assignee_id = (select auth.uid()));
 
@@ -206,6 +273,30 @@ create policy "primary admin manages intake station users"
 on public.intake_station_users for all to authenticated
 using (private.is_primary_admin())
 with check (private.is_primary_admin());
+
+drop policy if exists "assigned technicians read vehicle intake" on public.vehicle_intakes;
+create policy "assigned technicians read vehicle intake" on public.vehicle_intakes
+for select to authenticated
+using (private.is_assigned_to_intake(id));
+
+drop policy if exists "intake users and assigned technicians read intake images" on storage.objects;
+create policy "intake users and assigned technicians read intake images" on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'vehicle-intakes'
+  and (
+    (storage.foldername(name))[1] = (select auth.uid())::text
+    or exists (
+      select 1 from public.profiles p
+      where p.id = (select auth.uid()) and p.role = 'admin' and p.active = true
+    )
+    or exists (
+      select 1 from public.vehicle_intakes vi
+      where vi.image_path = storage.objects.name
+        and private.is_assigned_to_intake(vi.id)
+    )
+  )
+);
 
 drop policy if exists "work orders visible to admins and assigned technicians" on public.work_orders;
 create policy "work orders visible to admins and assigned technicians"
@@ -246,7 +337,7 @@ using (
   )
 );
 
--- RPCs remain SECURITY DEFINER but consult the private helper, never the exposed RPC.
+-- Workflow RPCs run as the caller and are constrained by table grants and RLS.
 create or replace function public.assign_vehicle_technicians(
   p_intake_id uuid,
   p_technician_ids uuid[],
@@ -254,6 +345,7 @@ create or replace function public.assign_vehicle_technicians(
 )
 returns uuid
 language plpgsql
+security invoker
 set search_path = ''
 as $$
 declare
@@ -318,6 +410,7 @@ create or replace function public.set_work_assignment_status(
 )
 returns void
 language plpgsql
+security invoker
 set search_path = ''
 as $$
 declare
@@ -350,8 +443,7 @@ begin
 
   update public.work_assignments
      set status = p_status,
-         pause_reason = case when p_status = 'paused' then btrim(p_pause_reason) else null end,
-         updated_at = now()
+         pause_reason = case when p_status = 'paused' then btrim(p_pause_reason) else null end
    where id = p_assignment_id;
 end;
 $$;
@@ -359,6 +451,7 @@ $$;
 create or replace function public.admin_complete_work_order(p_work_order_id uuid, p_reason text)
 returns void
 language plpgsql
+security invoker
 set search_path = ''
 as $$
 declare
@@ -384,5 +477,6 @@ $$;
 
 revoke all on function public.is_admin() from public, anon, authenticated;
 revoke all on function public.is_primary_admin() from public, anon, authenticated;
+revoke all on function public.is_assigned_to_intake(uuid) from public, anon, authenticated;
 
 
