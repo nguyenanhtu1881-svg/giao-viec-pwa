@@ -68,6 +68,8 @@ test("API hardening keeps authorization helpers private and writes least-privile
   assert.match(sql, /create schema if not exists private/i);
   assert.match(sql, /create or replace function private\.is_admin\(\)[\s\S]*?security definer/i);
   assert.match(sql, /create or replace function private\.is_assigned_to_intake\(p_intake_id uuid\)[\s\S]*?security definer/i);
+  assert.match(sql, /where a\.work_order_id = work_orders\.id and a\.technician_id = \(select auth\.uid\(\)\)/i);
+  assert.match(sql, /where a\.work_order_id = work_orders\.id and a\.technician_id = \(select auth\.uid\(\)\)/i);
   assert.match(sql, /revoke all on function public\.is_admin\(\) from public, anon, authenticated/i);
   assert.match(sql, /revoke all on function public\.is_assigned_to_intake\(uuid\) from public, anon, authenticated/i);
   assert.match(sql, /create or replace function private\.update_task_status[\s\S]*?language plpgsql\s+security definer/i);
