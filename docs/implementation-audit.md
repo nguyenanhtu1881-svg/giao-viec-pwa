@@ -15,14 +15,14 @@ Ngày đối chiếu: 05/11/2026. Phạm vi kiểm tra gồm nhánh review, Supa
 | Ảnh và hồ sơ hoàn tất giữ tối đa 45 ngày; không xóa hồ sơ chưa xong | Hàm claim chỉ chọn work order đã hoàn tất đủ 45 ngày và intake đã đóng; Edge Function xóa Storage trước, sau đó xóa hồ sơ | PGlite xác nhận chỉ claim/xóa hồ sơ đã đóng đủ 45 ngày; 3 test retention mock xác nhận Storage xóa trước DB và xử lý lỗi. Edge Function/lịch chưa deploy/cấu hình. |
 | RLS, quyền Storage và hàm đặc quyền được rà soát | Migration khôi phục bốn migration đã áp dụng, đưa helper/write RPC nhạy cảm vào schema `private`, thu hồi quyền DML dư thừa, giữ wrapper public `SECURITY INVOKER` | PGlite xác nhận grant: API role không gọi helper public/retention tùy ý, không ghi trực tiếp assignment/trạng thái task; intake cần xác nhận biển số, upload giới hạn đúng thư mục, nhân viên không liên quan không đọc ảnh/work order. Audit live trước đó phát hiện ACL rộng; migration chưa áp dụng lên project và advisory thật vẫn phản ánh trạng thái cũ. |
 | Auth đăng nhập, khôi phục mật khẩu và bảo vệ mật khẩu bị lộ | Listener Auth đăng ký sớm và xử lý `PASSWORD_RECOVERY`; Auth settings hiện vẫn tắt kiểm tra mật khẩu bị lộ | Chưa thử email khôi phục thực tế; mục bảo vệ mật khẩu cần bật trong Supabase Auth settings. |
-| Migration khớp lịch sử project | Bốn migration ngày 03/11 khôi phục từ lịch sử SQL live; migration bootstrap `20261102000000` bổ sung schema nền chưa có trong history live | Remote hiện ghi nhận bốn migration intake. Cần đối chiếu bootstrap trước `db push`; hướng dẫn ở README. |
+| Migration khớp lịch sử project | Bốn migration ngày 03/11 khôi phục từ lịch sử SQL live; migration bootstrap `20261102000000` bổ sung schema nền chưa có trong history live | Đọc lại live xác nhận đúng bốn version đã ghi nhận và cột/tables intake khớp migrations nền; bootstrap vẫn không nằm trong ledger. PGlite dựng trạng thái sau bốn migration, nâng cấp qua hai migration mới và giữ nguyên intake cũ (`plate_confirmed` là `NULL`). Cần quyết định xử lý ledger bootstrap trước `db push`; hướng dẫn ở README. |
 | Bảo toàn `main`, production và chuẩn bị review | Thay đổi nằm trong PR nháp #2, nhắm `feature/intake-foundation` | PR mở, chưa merge; không có migration hoặc deploy production từ Codex. |
 
 ## Kiểm tra đã chạy
 
 - `node --check app.js`, `node --check sw.js`, `node --check supabase/functions/retention-cleanup/index.js`
 - `node --test`: 10 bài đạt
-- `node tests/pglite-migrations.mjs`: toàn bộ 7 migration chạy trên PostgreSQL WASM với schema Auth/Storage giả lập; đã kiểm thử grants, RLS intake/Storage, quyền đọc work order theo phân công, trạng thái/lịch sử, hoàn tất ngoại lệ và retention. Block Realtime publication được bỏ qua vì PGlite không hỗ trợ publication.
+- `node tests/pglite-migrations.mjs`: dựng schema nền và bốn migration đã áp dụng, thêm dữ liệu intake cũ mẫu, sau đó chạy hai migration mới trên PostgreSQL WASM với Auth/Storage giả lập; xác nhận dữ liệu cũ còn nguyên, kiểm tra grants, RLS intake/Storage, workflow và retention. Block Realtime publication được bỏ qua vì PGlite không hỗ trợ publication.
 - `git diff --check`
 - GitHub Actions `Validate` thành công cho commit review hiện tại
 
