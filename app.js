@@ -245,7 +245,7 @@ async function loadIntakeQueue() {
   box.innerHTML = '<div class="empty">Đang tải hàng đợi...</div>';
   const { data, error } = await supabaseClient
     .from("vehicle_intakes")
-    .select("id,plate_number,customer_name,vehicle_model,document_type,image_path,station_no,received_at,status,receiver:profiles!vehicle_intakes_received_by_fkey(full_name)")
+    .select("id,plate_number,customer_name,vehicle_model,document_type,image_path,station_no,received_at,status,plate_confirmed,receiver:profiles!vehicle_intakes_received_by_fkey(full_name)")
     .order("received_at", { ascending: true });
   if (error) {
     box.innerHTML = '<div class="empty">Không tải được hàng đợi tiếp nhận. Vui lòng kiểm tra quyền truy cập.</div>';
@@ -271,12 +271,13 @@ async function loadIntakeQueue() {
     const plateKey=(item.plate_number||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
     const duplicate=plateKey && item.status!=="closed" && activePlateCounts[plateKey]>1
       ? '<span class="pill late">Biển số trùng: ' + activePlateCounts[plateKey] + ' xe đang xử lý</span>' : "";
+    const confirmationWarning=item.plate_confirmed===true ? "" : '<span class="pill late">Chưa ghi nhận xác nhận biển số</span>';
     const technicianChoices=technicians.map(x=>'<label class="technician-option"><input type="checkbox" data-technician-id value="'+x.id+'"><span>'+esc(x.full_name||x.email||"Kỹ thuật viên")+'</span></label>').join("");
     const assignForm=item.status==="closed" ? "" : '<form class="assignment-form" data-assign-intake="' + item.id + '">' +
       '<fieldset class="technician-picker"><legend>Giao cho kỹ thuật viên (có thể chọn nhiều người)</legend><div class="technician-options">' + technicianChoices + '</div></fieldset>' +
       '<label>Hạn hoàn thành (không bắt buộc)<input type="datetime-local" data-assignment-due></label>' +
       '<button class="btn btn-primary" type="submit">Tạo / bổ sung phân công</button><p class="message" data-assign-message aria-live="polite"></p></form>';
-    return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":item.status==="assigned"?"doing":"done") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đang xử lý":"Đã hoàn tất") + '</span></div>' + duplicate + '<div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div>' + assignForm + '</article>';
+    return '<article class="intake-card"><div class="task-top"><strong>' + esc(item.plate_number || "Chưa có biển số") + '</strong><span class="pill ' + (item.status==="new"?"todo":item.status==="assigned"?"doing":"done") + '">' + (item.status==="new"?"Chờ phân công":item.status==="assigned"?"Đang xử lý":"Đã hoàn tất") + '</span></div>' + duplicate + confirmationWarning + '<div class="task-meta"><span>Trạm ' + item.station_no + '</span><span>' + esc(receiver) + '</span><span>' + esc(fmtDate(item.received_at)) + '</span></div><div class="task-meta">' + esc(item.customer_name || "") + ' ' + esc(item.vehicle_model || "") + '</div><div class="task-meta">' + image + '</div>' + assignForm + '</article>';
   }));
   box.innerHTML = cards.join("");
 }
@@ -449,7 +450,8 @@ async function submitVehicleIntake(e) {
     document_type: documentType,
     image_path: path,
     station_no: intakeStationNo,
-    received_by: currentUser.id
+    received_by: currentUser.id,
+    plate_confirmed: $("intakePlateConfirmed").checked
   });
   if (error) {
     await supabaseClient.storage.from("vehicle-intakes").remove([path]);
@@ -553,4 +555,3 @@ $("workOrderList")?.addEventListener("change", updateWorkAssignment);
 $("workOrderList")?.addEventListener("click", completeWorkOrderOverride);
 
 init();
-
