@@ -232,6 +232,12 @@ on public.intake_station_users for all to authenticated
 using (private.is_primary_admin())
 with check (private.is_primary_admin());
 
+-- Replace the recorded read policy before revoking public.is_admin() below.
+drop policy if exists "intake station users read own or admin" on public.intake_station_users;
+create policy "intake station users read own or admin"
+on public.intake_station_users for select to authenticated
+using (profile_id = (select auth.uid()) or private.is_admin());
+
 drop policy if exists "intake users create own vehicle intake" on public.vehicle_intakes;
 create policy "intake users create own vehicle intake" on public.vehicle_intakes
 for insert to authenticated
@@ -244,6 +250,12 @@ with check (
       and s.station_no = vehicle_intakes.station_no
   )
 );
+
+-- The legacy queue policy called public.is_admin(), which is closed to API roles below.
+drop policy if exists "intake users read own and admins read all" on public.vehicle_intakes;
+create policy "intake users read own and admins read all" on public.vehicle_intakes
+for select to authenticated
+using (received_by = (select auth.uid()) or private.is_admin());
 
 drop policy if exists "assigned technicians read vehicle intake" on public.vehicle_intakes;
 create policy "assigned technicians read vehicle intake" on public.vehicle_intakes
