@@ -46,11 +46,45 @@ try {
     "20261103065555_fix_intake_station_policy_and_upload_rollback.sql",
     "20261103071430_admin_staff_roles_and_pending_activation.sql",
     "20261103071458_restrict_account_and_station_admin_to_primary.sql",
+  ];
+  const workflowMigrations = [
     "20261105090000_vehicle_multi_technician_workflow.sql",
     "20261105100000_harden_api_security_definers.sql",
   ];
+  const users = [
+    ["00000000-0000-4000-8000-000000000001", "tu.nguyen@hyundaimiennam.com", "Admin chính"],
+    ["00000000-0000-4000-8000-000000000002", "admin2@example.test", "Admin phụ"],
+    ["00000000-0000-4000-8000-000000000003", "intake@example.test", "Tiếp nhận"],
+    ["00000000-0000-4000-8000-000000000004", "tech1@example.test", "Kỹ thuật viên 1"],
+    ["00000000-0000-4000-8000-000000000005", "tech2@example.test", "Kỹ thuật viên 2"],
+    ["00000000-0000-4000-8000-000000000006", "employee@example.test", "Nhân viên khác"],
+    ["00000000-0000-4000-8000-000000000007", "pending@example.test", "Tài khoản chờ duyệt"],
+  ];
 
   for (const filename of migrationFiles) {
+    await database.exec(await readFile(new URL(filename, migrationsUrl), "utf8"));
+    console.log(`PASS ${filename}`);
+  }
+
+  // Model the live project after its recorded foundation migrations: existing Auth profiles,
+  // a station mapping, and an intake row must survive the workflow/security upgrade.
+  for (const index of [0, 2]) {
+    const [id, email, name] = users[index];
+    await database.query(
+      "insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,jsonb_build_object('full_name',$3::text))",
+      [id, email, name],
+    );
+  }
+  await database.exec(`
+    update public.profiles set active=true,role='admin' where id='${users[0][0]}';
+    update public.profiles set active=true,work_role='intake' where id='${users[2][0]}';
+    insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1);
+  `);
+  const legacyIntake = await database.query(`insert into public.vehicle_intakes
+    (plate_number,document_type,image_path,station_no,received_by,status)
+    values ('51A-LEGACY','unknown','${users[2][0]}/legacy.jpg',1,'${users[2][0]}','new') returning id`);
+
+  for (const filename of workflowMigrations) {
     let sql = await readFile(new URL(filename, migrationsUrl), "utf8");
     if (filename === "20261105090000_vehicle_multi_technician_workflow.sql") {
       // PGlite does not implement PostgreSQL publications; the Supabase Realtime block is checked separately.
@@ -59,6 +93,16 @@ try {
     await database.exec(sql);
     console.log(`PASS ${filename}`);
   }
+
+  const legacyPreserved = await database.query(`select plate_number,document_type,status,plate_confirmed
+    from public.vehicle_intakes where id=$1`, [legacyIntake.rows[0].id]);
+  assert.deepEqual(legacyPreserved.rows[0], {
+    plate_number: "51A-LEGACY",
+    document_type: "unknown",
+    status: "new",
+    plate_confirmed: null,
+  });
+  console.log("PASS workflow/security migration preserves existing intake and leaves legacy confirmation unknown");
 
   const checks = await database.query(`
     select to_regclass('public.work_orders') as work_orders,
@@ -88,18 +132,9 @@ try {
   assert.ok(Object.values(privileges.rows[0]).every(Boolean), "least-privilege grants must match the API role model");
   console.log("PASS least-privilege RPC and table grants");
 
-  const users = [
-    ["00000000-0000-4000-8000-000000000001", "tu.nguyen@hyundaimiennam.com", "Admin chính"],
-    ["00000000-0000-4000-8000-000000000002", "admin2@example.test", "Admin phụ"],
-    ["00000000-0000-4000-8000-000000000003", "intake@example.test", "Tiếp nhận"],
-    ["00000000-0000-4000-8000-000000000004", "tech1@example.test", "Kỹ thuật viên 1"],
-    ["00000000-0000-4000-8000-000000000005", "tech2@example.test", "Kỹ thuật viên 2"],
-    ["00000000-0000-4000-8000-000000000006", "employee@example.test", "Nhân viên khác"],
-    ["00000000-0000-4000-8000-000000000007", "pending@example.test", "Tài khoản chờ duyệt"],
-  ];
   for (const [id, email, name] of users) {
     await database.query(
-      "insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,jsonb_build_object('full_name',$3::text))",
+      "insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,jsonb_build_object('full_name',$3::text)) on conflict (id) do nothing",
       [id, email, name],
     );
   }
@@ -111,7 +146,7 @@ try {
     update public.profiles set active=true, work_role='intake' where id='${users[2][0]}';
     update public.profiles set active=true, work_role='technician' where id in ('${users[3][0]}','${users[4][0]}');
     update public.profiles set active=true where id='${users[5][0]}';
-    insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1);
+    insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1) on conflict (profile_id) do nothing;
   `);
 
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[1][0]]);
