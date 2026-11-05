@@ -161,4 +161,5 @@ test("retention removes Storage files before deleting eligible closed intakes", 
   assert.match(sql, /retention_claimed_at/);
   assert.ok(functionSource.indexOf("/storage/v1/object/vehicle-intakes") < functionSource.indexOf("complete_retention_for_intake"));
   assert.match(functionSource, /x-retention-secret/);
+  assert.match(await read("supabase/config.toml"), /\[functions\.retention-cleanup\]\s+verify_jwt\s*=\s*false/);
 });
