@@ -115,6 +115,8 @@ test("vehicle intake requires a selected document type and explicit plate confir
   assert.ok(app.includes('plate_confirmed: $("intakePlateConfirmed").checked'));
   assert.match(app, /plate_confirmed,receiver:/);
   assert.match(app, /Chưa ghi nhận xác nhận biển số/);
+  assert.match(app, /function clearIntakePreview\(\)[\s\S]*?URL\.revokeObjectURL\(intakePreviewUrl\)/);
+  assert.match(app, /\$\("intakeImage"\)\?\.addEventListener\("change", e => \{[\s\S]*?clearIntakePreview\(\)/);
 });
 
 test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
