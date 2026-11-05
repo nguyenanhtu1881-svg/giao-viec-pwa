@@ -15,9 +15,9 @@ Bảng `tasks` cũ vẫn dùng cho các việc chung; migration mới không xó
 
 ## Supabase
 
-Các migration nằm trong `supabase/migrations`. Bốn migration ngày 03/11 được phục hồi từ lịch sử SQL của dự án đang kết nối. Migration `20261102000000_core_task_schema.sql` khôi phục schema nền `profiles`/`tasks`; nó có phiên bản cũ hơn bốn migration đã chạy trên dự án thật. Migration workflow mới là `20261105090000_vehicle_multi_technician_workflow.sql`.
+Các migration nằm trong `supabase/migrations`. Bốn migration ngày 03/11 được phục hồi từ lịch sử SQL của dự án đang kết nối. Migration `20261102000000_core_task_schema.sql` khôi phục schema nền `profiles`/`tasks`; nó có phiên bản cũ hơn bốn migration đã chạy trên dự án thật. Migration `20261105090000_vehicle_multi_technician_workflow.sql` thêm workflow nhiều kỹ thuật viên; `20261105100000_harden_api_security_definers.sql` chuyển helper phân quyền sang schema `private`, thu hẹp quyền cấp ở cấp bảng/cột và chuyển RPC nghiệp vụ sang quyền người gọi với RLS.
 
-Trước khi áp dụng migration vào bất kỳ project nào, xem lịch sử bằng Supabase CLI và kiểm tra `db push --dry-run`. Không chạy migration mới trực tiếp lên project đang vận hành trước khi review kết quả dry run và thử trên môi trường phát triển.
+Migration bootstrap `20261102000000` chưa có trong lịch sử migration của project hiện tại, trong khi bốn migration intake đã được ghi nhận. Vì vậy hãy đối chiếu `supabase migration list --remote` và schema trước khi `db push`; nếu bootstrap đã được áp dụng thủ công thì chỉ sửa lịch sử bằng `supabase migration repair --status applied 20261102000000` sau khi xác minh đầy đủ các đối tượng nó tạo. Không chạy migration mới trực tiếp lên project đang vận hành trước khi review kết quả dry run và thử trên môi trường phát triển.
 
 Với project mới, làm theo [hướng dẫn Supabase](supabase/README.md) để đăng ký và kích hoạt Admin chính một lần. Frontend chỉ được chứa URL và publishable/anon key; tuyệt đối không đặt service role key hoặc secret lịch chạy vào mã trình duyệt.
 
@@ -32,9 +32,9 @@ node --check sw.js
 node --check supabase/functions/retention-cleanup/index.js
 ```
 
-Các test này kiểm tra tham chiếu DOM, cấu trúc migration và thứ tự/xử lý lỗi của retention function. Chúng không thay cho kiểm thử RLS, Storage, Auth hoặc chạy migration trên Supabase development project.
+Các test này kiểm tra tham chiếu DOM, một số bất biến bảo mật trong migration và thứ tự/xử lý lỗi của retention function. Chúng không thay cho kiểm thử RLS, Storage, Auth hoặc chạy migration trên Supabase development project.
 
 ## Trước khi phát hành
 
-Kiểm thử đăng nhập bằng Admin chính, Admin thứ hai, nhân viên tiếp nhận và kỹ thuật viên; kiểm tra nhiều người cùng cập nhật một xe, tạm dừng bắt buộc có lý do, hoàn tất tổng thể, phân quyền Storage, cập nhật Realtime và email khôi phục. Triển khai Edge Function và lịch chạy retention riêng sau khi cấu hình secrets trên Supabase.
+Kiểm thử đăng nhập bằng Admin chính, Admin thứ hai, nhân viên tiếp nhận và kỹ thuật viên; kiểm tra nhiều người cùng cập nhật một xe, tạm dừng bắt buộc có lý do, hoàn tất tổng thể, phân quyền Storage, cập nhật Realtime và email khôi phục. Bật bảo vệ mật khẩu bị lộ trong Auth settings (đang tắt trên project đã kiểm tra). Triển khai Edge Function và lịch chạy retention riêng sau khi cấu hình secrets trên Supabase.
 

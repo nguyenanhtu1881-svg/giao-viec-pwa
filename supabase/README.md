@@ -1,6 +1,6 @@
 # Supabase migrations and scheduled retention
 
-The four `20261103...` migrations restore the SQL recorded in the connected project. The earlier `20261102...` migration bootstraps the original profiles and generic task tables that predated the tracked intake migrations. The `20261105...` migration adds vehicle work orders and technician assignments.
+The four `20261103...` migrations restore the SQL recorded in the connected project. The earlier `20261102...` migration bootstraps the original profiles and generic task tables that predated the tracked intake migrations. The `20261105090000...` migration adds vehicle work orders and technician assignments. The `20261105100000...` migration moves authorization helpers out of the exposed API schema and applies least-privilege writes to task and workflow tables.
 
 For a brand-new project, first create the primary administrator through Supabase Auth sign-up, then promote that exact account once in the Supabase SQL Editor:
 

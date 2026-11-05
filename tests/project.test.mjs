@@ -25,6 +25,7 @@ test("tracked database history and new workflow migration are present", async ()
     "20261103071430_admin_staff_roles_and_pending_activation.sql",
     "20261103071458_restrict_account_and_station_admin_to_primary.sql",
     "20261105090000_vehicle_multi_technician_workflow.sql",
+    "20261105100000_harden_api_security_definers.sql",
   ]) assert.ok(files.includes(version), `Missing migration ${version}`);
 });
 
@@ -36,6 +37,18 @@ test("workflow SQL keeps assignments independent and pauses auditable", async ()
   assert.match(sql, /work_assignment_events/);
   assert.match(sql, /exists \(\s*select 1 from public\.work_assignments where work_order_id = target_order_id\s*\) and not exists/i);
   assert.match(sql, /revoke all on function public\.set_work_assignment_status\(uuid, text, text\) from public, anon/i);
+});
+
+test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
+  const sql = await read("supabase/migrations/20261105100000_harden_api_security_definers.sql");
+  assert.match(sql, /create schema if not exists private/i);
+  assert.match(sql, /create or replace function private\.is_admin\(\)[\s\S]*?security definer/i);
+  assert.match(sql, /revoke all on function public\.is_admin\(\) from public, anon, authenticated/i);
+  assert.match(sql, /create or replace function public\.update_task_status[\s\S]*?language plpgsql\s+set search_path/i);
+  assert.match(sql, /revoke all privileges on table public\.profiles, public\.tasks[\s\S]*?public\.work_order_events\s+from public, anon, authenticated/i);
+  assert.match(sql, /revoke all privileges \(id, title, notes, status, priority, due_at, assignee_id, created_by, created_at, updated_at\)\s+on table public\.tasks from public, anon, authenticated/i);
+  assert.match(sql, /grant update \(status, updated_at\)\s+on public\.tasks to authenticated/i);
+  assert.match(sql, /create policy "assigned technicians update own active assignment"/i);
 });
 
 test("retention removes Storage files before deleting eligible closed intakes", async () => {
