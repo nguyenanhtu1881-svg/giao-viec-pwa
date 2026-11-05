@@ -80,6 +80,7 @@ try {
     ["00000000-0000-4000-8000-000000000004", "tech1@example.test", "Kỹ thuật viên 1"],
     ["00000000-0000-4000-8000-000000000005", "tech2@example.test", "Kỹ thuật viên 2"],
     ["00000000-0000-4000-8000-000000000006", "employee@example.test", "Nhân viên khác"],
+    ["00000000-0000-4000-8000-000000000007", "pending@example.test", "Tài khoản chờ duyệt"],
   ];
   for (const [id, email, name] of users) {
     await database.query(
@@ -87,6 +88,8 @@ try {
       [id, email, name],
     );
   }
+  const pendingBeforeApproval = await database.query("select role,active,work_role from public.profiles where id=$1", [users[6][0]]);
+  assert.deepEqual(pendingBeforeApproval.rows[0], { role: "employee", active: false, work_role: "unassigned" });
   await database.exec(`
     update public.profiles set active=true, role='admin' where id='${users[0][0]}';
     update public.profiles set active=true, role='admin' where id='${users[1][0]}';
@@ -95,6 +98,28 @@ try {
     update public.profiles set active=true where id='${users[5][0]}';
     insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1);
   `);
+
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[1][0]]);
+  await database.exec("set role authenticated");
+  const secondaryAdminUpdate = await database.query(
+    "update public.profiles set role='admin',active=true where id=$1 returning id",
+    [users[6][0]],
+  );
+  assert.equal(secondaryAdminUpdate.rows.length, 0, "a secondary admin must not manage accounts");
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[0][0]]);
+  const primaryAdminUpdate = await database.query(
+    "update public.profiles set active=true,work_role='intake' where id=$1 returning id",
+    [users[6][0]],
+  );
+  assert.equal(primaryAdminUpdate.rows.length, 1, "the primary admin must be able to activate employees");
+  await assert.rejects(
+    database.query("update public.profiles set role='employee' where id=$1", [users[0][0]]),
+    /row-level security|Không thể hạ quyền/i,
+  );
+  await database.exec("reset role");
+  const protectedPrimary = await database.query("select role,active from public.profiles where id=$1", [users[0][0]]);
+  assert.deepEqual(protectedPrimary.rows[0], { role: "admin", active: true });
+  console.log("PASS pending signup and primary-admin-only account control");
 
   const intakeUser = users[2][0];
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [intakeUser]);
