@@ -31,12 +31,17 @@ test("tracked database history and new workflow migration are present", async ()
 
 test("workflow SQL keeps assignments independent and pauses auditable", async () => {
   const sql = await read("supabase/migrations/20261105090000_vehicle_multi_technician_workflow.sql");
+  const app = await read("app.js");
   assert.match(sql, /unique\s*\(work_order_id, technician_id\)/i);
   assert.match(sql, /status in \('todo', 'doing', 'paused', 'done'\)/i);
   assert.match(sql, /status = 'paused' and nullif\(btrim\(pause_reason\), ''\) is not null/i);
   assert.match(sql, /work_assignment_events/);
   assert.match(sql, /exists \(\s*select 1 from public\.work_assignments where work_order_id = target_order_id\s*\) and not exists/i);
   assert.match(sql, /revoke all on function public\.set_work_assignment_status\(uuid, text, text\) from public, anon/i);
+  for (const table of ["work_orders", "work_assignments", "vehicle_intakes"])
+    assert.match(sql, new RegExp(`alter publication supabase_realtime add table public\\.${table}`, "i"));
+  for (const table of ["work_orders", "work_assignments", "vehicle_intakes"])
+    assert.match(app, new RegExp(`table:"${table}"`));
 });
 
 test("intake assignment uses a touch-friendly multi-technician checkbox list", async () => {
