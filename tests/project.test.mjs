@@ -117,6 +117,8 @@ test("vehicle intake requires a selected document type and explicit plate confir
   assert.match(app, /Chưa ghi nhận xác nhận biển số/);
   assert.match(app, /function clearIntakePreview\(\)[\s\S]*?URL\.revokeObjectURL\(intakePreviewUrl\)/);
   assert.match(app, /\$\("intakeImage"\)\?\.addEventListener\("change", e => \{[\s\S]*?clearIntakePreview\(\)/);
+  assert.match(app, /async function removeTemporaryIntakeImage\(path\)[\s\S]*?\.remove\(\[path\]\)[\s\S]*?return false/);
+  assert.match(app, /const imageRemoved=await removeTemporaryIntakeImage\(path\)[\s\S]*?ảnh tạm chưa xóa được/);
 });
 
 test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
