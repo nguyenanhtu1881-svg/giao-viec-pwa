@@ -21,7 +21,7 @@ Ngày đối chiếu: 05/11/2026. Phạm vi kiểm tra gồm nhánh review, Supa
 ## Kiểm tra đã chạy
 
 - `node --check app.js`, `node --check sw.js`, `node --check supabase/functions/retention-cleanup/index.js`
-- `node --test`: 11 bài đạt; có mô phỏng service worker khi mất mạng, chỉ dùng trang HTML offline cho điều hướng và không cache phản hồi lỗi.
+- `node --test`: 12 bài đạt; có mô phỏng service worker khi mất mạng, chỉ dùng trang HTML offline cho điều hướng và không cache phản hồi lỗi; kiểm tra retention endpoint chỉ nhận POST và chặn request thiếu secret.
 - `node tests/pglite-migrations.mjs`: dựng schema nền và bốn migration đã áp dụng, thêm dữ liệu intake cũ mẫu, sau đó chạy hai migration mới trên PostgreSQL WASM với Auth/Storage giả lập; xác nhận dữ liệu cũ còn nguyên, helper công khai bị thu hồi không còn được policy gọi, kiểm tra grants, RLS intake/Storage, giao việc trái quyền bị rollback, workflow và retention. Block Realtime publication được bỏ qua vì PGlite không hỗ trợ publication.
 - `git diff --check`
 - GitHub Actions `Validate` thành công cho commit review hiện tại
