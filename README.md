@@ -34,7 +34,15 @@ node --check supabase/functions/retention-cleanup/index.js
 
 Các test này kiểm tra tham chiếu DOM, một số bất biến bảo mật trong migration và thứ tự/xử lý lỗi của retention function. Chúng không thay cho kiểm thử RLS, Storage, Auth hoặc chạy migration trên Supabase development project.
 
+Để kiểm thử thêm SQL workflow trên PostgreSQL WASM cục bộ (không kết nối Supabase), cài PGlite tạm và chạy:
+
+```sh
+npm install --no-save @electric-sql/pglite
+node tests/pglite-migrations.mjs
+```
+
+Harness dùng các bảng/function Auth và Storage giả lập. Nó bỏ riêng khối `ALTER PUBLICATION` vì PGlite không hỗ trợ publication; cần kiểm tra Realtime trên Supabase thật trước khi phát hành.
+
 ## Trước khi phát hành
 
 Kiểm thử đăng nhập bằng Admin chính, Admin thứ hai, nhân viên tiếp nhận và kỹ thuật viên; kiểm tra nhiều người cùng cập nhật một xe, tạm dừng bắt buộc có lý do, hoàn tất tổng thể, phân quyền Storage, cập nhật Realtime và email khôi phục. Bật bảo vệ mật khẩu bị lộ trong Auth settings (đang tắt trên project đã kiểm tra). Triển khai Edge Function và lịch chạy retention riêng sau khi cấu hình secrets trên Supabase.
-
