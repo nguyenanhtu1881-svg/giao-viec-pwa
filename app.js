@@ -403,7 +403,7 @@ async function runIntakeOcr() {
       $("intakePlate").value = plateMatch[0].replace(/\s+/g, "").replace(/^(\d{2}[A-Z]{1,2})/, "$1-");
     }
     const normalized = textValue.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-    if ($("intakeDocumentType").value === "unknown") {
+    if (!$("intakeDocumentType").value) {
       if (normalized.includes("BAO GIA")) $("intakeDocumentType").value = "quotation";
       else if (normalized.includes("PHIEU KIEM TRA")) $("intakeDocumentType").value = "inspection";
     }
@@ -422,8 +422,9 @@ async function submitVehicleIntake(e) {
   }
   const file = $("intakeImage").files?.[0];
   const plate = $("intakePlate").value.trim().toUpperCase();
-  if (!file || !plate) {
-    msg("intakeMessage", "Vui lòng chọn một ảnh phiếu và xác nhận biển số.");
+  const documentType = $("intakeDocumentType").value;
+  if (!file || !plate || !["quotation", "inspection"].includes(documentType) || !$("intakePlateConfirmed").checked) {
+    msg("intakeMessage", "Chọn loại phiếu, nhập biển số và xác nhận đã đối chiếu biển số trên ảnh.");
     return;
   }
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
@@ -445,7 +446,7 @@ async function submitVehicleIntake(e) {
     customer_name: $("intakeCustomer").value.trim() || null,
     vehicle_model: $("intakeModel").value.trim() || null,
     chassis_number: $("intakeChassis").value.trim() || null,
-    document_type: $("intakeDocumentType").value,
+    document_type: documentType,
     image_path: path,
     station_no: intakeStationNo,
     received_by: currentUser.id
@@ -535,9 +536,13 @@ $("accountList")?.addEventListener("click", e => {
 $("intakeImage")?.addEventListener("change", e => {
   const file = e.target.files?.[0];
   if (!file) return;
+  $("intakePlate").value = "";
+  $("intakePlateConfirmed").checked = false;
+  $("intakeDocumentType").value = "";
   $("intakePreview").src = URL.createObjectURL(file);
   $("intakePreview").classList.remove("hidden");
 });
+$("intakePlate")?.addEventListener("input", () => { $("intakePlateConfirmed").checked = false; });
 $("ocrButton")?.addEventListener("click", runIntakeOcr);
 $("intakeForm")?.addEventListener("submit", submitVehicleIntake);
 $("stationAdminForm")?.addEventListener("submit", saveIntakeStation);

@@ -49,6 +49,15 @@ test("intake assignment uses a touch-friendly multi-technician checkbox list", a
   assert.match(styles, /min-height:44px/);
 });
 
+test("vehicle intake requires a selected document type and explicit plate confirmation", async () => {
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.match(html, /id="intakeDocumentType" required/);
+  assert.match(html, /id="intakePlateConfirmed" type="checkbox" required/);
+  assert.match(app, /!\["quotation", "inspection"\]\.includes\(documentType\)/);
+  assert.match(app, /!\$\("intakePlateConfirmed"\)\.checked/);
+  assert.match(app, /intakePlateConfirmed"\)\.checked = false;/);
+});
+
 test("API hardening keeps authorization helpers private and writes least-privilege", async () => {
   const sql = await read("supabase/migrations/20261105100000_harden_api_security_definers.sql");
   assert.match(sql, /create schema if not exists private/i);

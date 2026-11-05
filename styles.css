@@ -11,6 +11,8 @@
 .technician-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:4px;max-height:220px;overflow:auto}
 .technician-option{display:flex;align-items:center;gap:9px;min-height:44px;padding:5px;border-radius:8px}
 .technician-option input{width:20px;min-height:20px;height:20px;margin:0;flex:0 0 20px;accent-color:var(--blue)}
+.plate-confirmation{display:flex;align-items:center;gap:10px;min-height:44px}
+.plate-confirmation input{width:20px;min-height:20px;height:20px;margin:0;flex:0 0 20px;accent-color:var(--blue)}
 .work-order-card{border:1px solid var(--line);border-radius:13px;padding:15px;display:grid;gap:12px}
 .assignment-list{display:grid;gap:8px}
 .assignment-card{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;background:#fbfcfe}
