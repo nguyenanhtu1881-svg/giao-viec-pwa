@@ -158,6 +158,17 @@ try {
     insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1) on conflict (profile_id) do nothing;
   `);
 
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[5][0]]);
+  await database.exec("set role authenticated");
+  await assert.rejects(
+    database.query("select public.assign_vehicle_technicians($1,$2::uuid[],null)", [legacyIntake.rows[0].id, [users[3][0]]]),
+    /Chỉ Admin/i,
+  );
+  await database.exec("reset role");
+  const unauthorizedOrder = await database.query("select count(*)::int as n from public.work_orders where vehicle_intake_id=$1", [legacyIntake.rows[0].id]);
+  assert.equal(unauthorizedOrder.rows[0].n, 0, "a rejected employee assignment must not leave an empty work order");
+  console.log("PASS non-admin assignment is rejected and rolls back atomically");
+
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[1][0]]);
   await database.exec("set role authenticated");
   const secondaryAdminUpdate = await database.query(
