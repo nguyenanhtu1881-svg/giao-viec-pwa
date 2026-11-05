@@ -74,6 +74,7 @@ test("API hardening keeps authorization helpers private and writes least-privile
   assert.match(sql, /create or replace function private\.is_admin\(\)[\s\S]*?security definer/i);
   assert.match(sql, /create or replace function private\.is_assigned_to_intake\(p_intake_id uuid\)[\s\S]*?security definer/i);
   assert.match(sql, /where a\.work_order_id = work_orders\.id and a\.technician_id = \(select auth\.uid\(\)\)/i);
+  assert.match(sql, /drop policy if exists "admin can update profiles" on public\.profiles/i);
   assert.match(sql, /where a\.work_order_id = work_orders\.id and a\.technician_id = \(select auth\.uid\(\)\)/i);
   assert.match(sql, /revoke all on function public\.is_admin\(\) from public, anon, authenticated/i);
   assert.match(sql, /revoke all on function public\.is_assigned_to_intake\(uuid\) from public, anon, authenticated/i);
