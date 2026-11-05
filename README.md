@@ -45,4 +45,4 @@ Harness dùng các bảng/function Auth và Storage giả lập. Nó bỏ riêng
 
 ## Trước khi phát hành
 
-Kiểm thử đăng nhập bằng Admin chính, Admin thứ hai, nhân viên tiếp nhận và kỹ thuật viên; kiểm tra nhiều người cùng cập nhật một xe, tạm dừng bắt buộc có lý do, hoàn tất tổng thể, phân quyền Storage, cập nhật Realtime và email khôi phục. Bật bảo vệ mật khẩu bị lộ trong Auth settings (đang tắt trên project đã kiểm tra). Triển khai Edge Function và lịch chạy retention riêng sau khi cấu hình secrets trên Supabase.
+Kiểm thử đăng nhập bằng Admin chính, Admin thứ hai, nhân viên tiếp nhận và kỹ thuật viên; kiểm tra nhiều người cùng cập nhật một xe, tạm dừng bắt buộc có lý do, hoàn tất tổng thể, phân quyền Storage, cập nhật Realtime và email khôi phục. Trên Supabase Dashboard, vào **Authentication → Providers → Email** và bật mục ngăn sử dụng mật khẩu bị lộ (hiện đang tắt trên project đã kiểm tra). Tính năng này yêu cầu gói Pro trở lên; xem [Supabase Password security](https://supabase.com/docs/guides/auth/password-security). Triển khai Edge Function và lịch chạy retention riêng sau khi cấu hình secrets trên Supabase.
