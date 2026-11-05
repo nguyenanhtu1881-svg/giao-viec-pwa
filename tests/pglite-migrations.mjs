@@ -13,6 +13,7 @@ try {
     create role supabase_auth_admin;
     create schema auth;
     create schema storage;
+    grant usage on schema storage to authenticated;
     create table auth.users (
       id uuid primary key,
       email text,
@@ -33,6 +34,8 @@ try {
       bucket_id text,
       name text
     );
+    alter table storage.objects enable row level security;
+    grant select, insert, delete on storage.objects to authenticated;
     create function storage.foldername(name text) returns text[]
       language sql immutable as $$ select string_to_array(name, '/') $$;
   `);
@@ -76,6 +79,7 @@ try {
     ["00000000-0000-4000-8000-000000000003", "intake@example.test", "Tiếp nhận"],
     ["00000000-0000-4000-8000-000000000004", "tech1@example.test", "Kỹ thuật viên 1"],
     ["00000000-0000-4000-8000-000000000005", "tech2@example.test", "Kỹ thuật viên 2"],
+    ["00000000-0000-4000-8000-000000000006", "employee@example.test", "Nhân viên khác"],
   ];
   for (const [id, email, name] of users) {
     await database.query(
@@ -88,6 +92,7 @@ try {
     update public.profiles set active=true, role='admin' where id='${users[1][0]}';
     update public.profiles set active=true, work_role='intake' where id='${users[2][0]}';
     update public.profiles set active=true, work_role='technician' where id in ('${users[3][0]}','${users[4][0]}');
+    update public.profiles set active=true where id='${users[5][0]}';
     insert into public.intake_station_users(profile_id,station_no) values ('${users[2][0]}',1);
   `);
 
@@ -95,16 +100,25 @@ try {
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [intakeUser]);
   await database.exec("set role authenticated");
   await assert.rejects(
+    database.query("insert into storage.objects(bucket_id,name) values ('vehicle-intakes','someone-else/bad.jpg')"),
+    /row-level security|violates row-level security/i,
+  );
+  await database.query("insert into storage.objects(bucket_id,name) values ('vehicle-intakes',$1)", [`${intakeUser}/bad.jpg`]);
+  await assert.rejects(
     database.query(`insert into public.vehicle_intakes(plate_number,document_type,image_path,station_no,received_by,plate_confirmed)
       values ('51A-111.11','quotation','${intakeUser}/bad.jpg',1,'${intakeUser}',false)`),
     /row-level security|violates row-level security/i,
   );
+  await database.query("delete from storage.objects where bucket_id='vehicle-intakes' and name=$1", [`${intakeUser}/bad.jpg`]);
+  const rolledBackImage = await database.query("select count(*)::int as n from storage.objects where name=$1", [`${intakeUser}/bad.jpg`]);
+  assert.equal(rolledBackImage.rows[0].n, 0);
+  await database.query("insert into storage.objects(bucket_id,name) values ('vehicle-intakes',$1)", [`${intakeUser}/good.jpg`]);
   const submitted = await database.query(`insert into public.vehicle_intakes
     (plate_number,document_type,image_path,station_no,received_by,plate_confirmed)
     values ('51A-111.11','quotation','${intakeUser}/good.jpg',1,'${intakeUser}',true) returning id`);
   const intakeId = submitted.rows[0].id;
   await database.exec("reset role");
-  console.log("PASS RLS requires plate confirmation for new intake");
+  console.log("PASS intake and Storage RLS require plate confirmation and own upload path");
 
   const adminId = users[0][0];
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [adminId]);
@@ -120,6 +134,14 @@ try {
   );
   assert.equal(assignments.rows.length, 2);
   const assignmentByTech = new Map(assignments.rows.map((row) => [row.technician_id, row.id]));
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[3][0]]);
+  const visibleImage = await database.query("select count(*)::int as n from storage.objects where name=$1", [`${intakeUser}/good.jpg`]);
+  assert.equal(visibleImage.rows[0].n, 1, "an assigned technician must read the intake image");
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[5][0]]);
+  const hiddenOrder = await database.query("select count(*)::int as n from public.work_orders where id=$1", [orderId]);
+  const hiddenImage = await database.query("select count(*)::int as n from storage.objects where name=$1", [`${intakeUser}/good.jpg`]);
+  assert.equal(hiddenOrder.rows[0].n, 0, "an unrelated employee must not see the work order");
+  assert.equal(hiddenImage.rows[0].n, 0, "an unrelated employee must not read the intake image");
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[3][0]]);
   await database.query("select public.set_work_assignment_status($1,'doing',null)", [assignmentByTech.get(users[3][0])]);
   await database.exec("reset role");
