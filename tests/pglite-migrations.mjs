@@ -73,6 +73,21 @@ try {
   `);
   console.log("SCHEMA", JSON.stringify(checks.rows[0]));
 
+  const privileges = await database.query(`
+    select not has_function_privilege('anon','public.is_admin()','EXECUTE') as anon_cannot_call_is_admin,
+           not has_function_privilege('authenticated','public.is_admin()','EXECUTE') as users_cannot_call_is_admin,
+           has_function_privilege('authenticated','private.is_admin()','EXECUTE') as users_can_use_private_admin_helper,
+           has_function_privilege('authenticated','public.update_task_status(uuid,text)','EXECUTE') as users_can_use_task_rpc,
+           not has_function_privilege('anon','public.update_task_status(uuid,text)','EXECUTE') as anon_cannot_use_task_rpc,
+           not has_function_privilege('authenticated','public.claim_expired_vehicle_intakes(integer)','EXECUTE') as users_cannot_claim_retention,
+           has_function_privilege('service_role','public.claim_expired_vehicle_intakes(integer)','EXECUTE') as service_can_claim_retention,
+           not has_table_privilege('authenticated','public.work_assignments','INSERT') as no_direct_assignment_insert,
+           not has_table_privilege('authenticated','public.work_assignments','UPDATE') as no_direct_assignment_update,
+           not has_column_privilege('authenticated','public.tasks','status','UPDATE') as no_direct_task_status_update
+  `);
+  assert.ok(Object.values(privileges.rows[0]).every(Boolean), "least-privilege grants must match the API role model");
+  console.log("PASS least-privilege RPC and table grants");
+
   const users = [
     ["00000000-0000-4000-8000-000000000001", "tu.nguyen@hyundaimiennam.com", "Admin chính"],
     ["00000000-0000-4000-8000-000000000002", "admin2@example.test", "Admin phụ"],
