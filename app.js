@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const configured = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("DAN_") && !SUPABASE_ANON_KEY.includes("DAN_");
 const $ = (id) => document.getElementById(id);
-let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null, intakeStationNo = null, workflowChannel = null, passwordRecoveryPending = false;
+let supabaseClient = null, currentUser = null, profile = null, employees = [], tasks = [], activeFilter = "all", installPrompt = null, intakeStationNo = null, workflowChannel = null, passwordRecoveryPending = false, intakePreviewUrl = null;
 
 const statusText = {todo:"Chưa làm", doing:"Đang làm", done:"Hoàn thành"};
 function isLate(t){return t.status!=="done" && new Date(t.due_at).getTime()<Date.now()}
@@ -14,6 +14,12 @@ function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt
 function toast(msg){const el=$("toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2800)}
 function show(el,on=true){$(el).classList.toggle("hidden",!on)}
 function msg(id,text,isError=true){$(id).textContent=text;$(id).style.color=isError?"#d92d3a":"#16845b"}
+function clearIntakePreview(){
+  if(intakePreviewUrl)URL.revokeObjectURL(intakePreviewUrl);
+  intakePreviewUrl=null;
+  $("intakePreview").removeAttribute("src");
+  $("intakePreview").classList.add("hidden");
+}
 
 async function init(){
   if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
@@ -460,7 +466,7 @@ async function submitVehicleIntake(e) {
     return;
   }
   $("intakeForm").reset();
-  $("intakePreview").classList.add("hidden");
+  clearIntakePreview();
   msg("intakeMessage", "Đã tiếp nhận xe thành công.", false);
   toast("Đã gửi hồ sơ tiếp nhận.");
   if (profile.role === "admin") await loadIntakeQueue();
@@ -537,11 +543,13 @@ $("accountList")?.addEventListener("click", e => {
 
 $("intakeImage")?.addEventListener("change", e => {
   const file = e.target.files?.[0];
+  clearIntakePreview();
   if (!file) return;
   $("intakePlate").value = "";
   $("intakePlateConfirmed").checked = false;
   $("intakeDocumentType").value = "";
-  $("intakePreview").src = URL.createObjectURL(file);
+  intakePreviewUrl = URL.createObjectURL(file);
+  $("intakePreview").src = intakePreviewUrl;
   $("intakePreview").classList.remove("hidden");
 });
 $("intakePlate")?.addEventListener("input", () => { $("intakePlateConfirmed").checked = false; });
