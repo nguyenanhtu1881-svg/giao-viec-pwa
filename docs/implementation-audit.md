@@ -22,7 +22,7 @@ Ngày đối chiếu: 05/11/2026. Phạm vi kiểm tra gồm nhánh review, Supa
 
 - `node --check app.js`, `node --check sw.js`, `node --check supabase/functions/retention-cleanup/index.js`
 - `node --test`: 10 bài đạt
-- PGlite: toàn bộ 7 migration chạy trên PostgreSQL WASM với schema Auth/Storage giả lập; đã kiểm thử RLS intake, phân công/trạng thái/lịch sử, hoàn tất ngoại lệ và retention. Block Realtime publication được bỏ qua vì PGlite không hỗ trợ publication.
+- `node tests/pglite-migrations.mjs`: toàn bộ 7 migration chạy trên PostgreSQL WASM với schema Auth/Storage giả lập; đã kiểm thử RLS intake, quyền đọc work order theo phân công, trạng thái/lịch sử, hoàn tất ngoại lệ và retention. Block Realtime publication được bỏ qua vì PGlite không hỗ trợ publication.
 - `git diff --check`
 - GitHub Actions `Validate` thành công cho commit review hiện tại
 
