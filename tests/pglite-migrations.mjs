@@ -291,6 +291,24 @@ try {
     where vi.id=$1`, [activeIntake.rows[0].id]);
   assert.deepEqual(activeLeft.rows[0], { intake_status: "assigned", order_status: "active" });
   console.log("PASS 45-day retention deletes only completed closed intake and preserves active work");
+
+  // In the live project the core bootstrap is absent from the remote ledger. Model the
+  // risky `--include-all` order by applying that older bootstrap after the four recorded
+  // migrations, then ensure the hardening migration removes its broad legacy account policy.
+  await database.exec(await readFile(new URL("20261102000000_core_task_schema.sql", migrationsUrl), "utf8"));
+  await database.exec(await readFile(new URL("20261105100000_harden_api_security_definers.sql", migrationsUrl), "utf8"));
+  const legacyAdminPolicy = await database.query(`select count(*)::int as n from pg_policies
+    where schemaname='public' and tablename='profiles' and policyname='admin can update profiles'`);
+  assert.equal(legacyAdminPolicy.rows[0].n, 0);
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[1][0]]);
+  await database.exec("set role authenticated");
+  const secondaryAfterOutOfOrder = await database.query(
+    "update public.profiles set active=false where id=$1 returning id",
+    [users[6][0]],
+  );
+  assert.equal(secondaryAfterOutOfOrder.rows.length, 0);
+  await database.exec("reset role");
+  console.log("PASS out-of-order bootstrap replay does not restore broad Admin account policy");
 } finally {
   await database.close();
 }
