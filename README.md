@@ -32,7 +32,7 @@ node --check sw.js
 node --check supabase/functions/retention-cleanup/index.js
 ```
 
-Các test này kiểm tra tham chiếu DOM, một số bất biến bảo mật trong migration và thứ tự/xử lý lỗi của retention function. Chúng không thay cho kiểm thử RLS, Storage, Auth hoặc chạy migration trên Supabase development project.
+Các test này kiểm tra tham chiếu DOM, hành vi offline/cache của service worker, một số bất biến bảo mật trong migration và thứ tự/xử lý lỗi của retention function. Chúng không thay cho kiểm thử RLS, Storage, Auth hoặc chạy migration trên Supabase development project.
 
 Để kiểm thử thêm SQL workflow trên PostgreSQL WASM cục bộ (không kết nối Supabase), cài PGlite tạm và chạy:
 
