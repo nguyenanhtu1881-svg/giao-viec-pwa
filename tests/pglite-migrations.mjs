@@ -324,8 +324,17 @@ try {
   const legacyAdminPolicy = await database.query(`select count(*)::int as n from pg_policies
     where schemaname='public' and tablename='profiles' and policyname='admin can update profiles'`);
   assert.equal(legacyAdminPolicy.rows[0].n, 0);
+  const stalePoliciesAfterReplay = await database.query(`
+    select policyname from pg_policies
+    where schemaname in ('public', 'storage')
+      and coalesce(qual, '') || ' ' || coalesce(with_check, '')
+          ~ 'public\\.(is_admin|is_primary_admin)\\s*\\('
+  `);
+  assert.deepEqual(stalePoliciesAfterReplay.rows, [], "out-of-order bootstrap must not leave policies using revoked public helpers");
   await database.query("select set_config('request.jwt.claim.sub',$1,false)", [users[1][0]]);
   await database.exec("set role authenticated");
+  const queueAfterReplay = await database.query("select count(*)::int as n from public.vehicle_intakes");
+  assert.ok(queueAfterReplay.rows[0].n > 0, "admins must still read the intake queue after bootstrap replay");
   const secondaryAfterOutOfOrder = await database.query(
     "update public.profiles set active=false where id=$1 returning id",
     [users[6][0]],
