@@ -55,6 +55,10 @@ $$;
 revoke all on function private.is_assigned_to_intake(uuid) from public, anon;
 grant execute on function private.is_assigned_to_intake(uuid) to authenticated;
 
+-- Preserve the employee's explicit plate confirmation for each newly submitted intake.
+alter table public.vehicle_intakes
+  add column if not exists plate_confirmed boolean;
+
 -- Remove broad default/table and per-column grants before restoring app-required access.
 revoke all privileges on table public.profiles, public.tasks,
   public.intake_station_users, public.vehicle_intakes,
@@ -68,7 +72,8 @@ revoke all privileges (id, title, notes, status, priority, due_at, assignee_id, 
 revoke all privileges (profile_id, station_no, created_at)
   on table public.intake_station_users from public, anon, authenticated;
 revoke all privileges (id, plate_number, customer_name, vehicle_model, chassis_number,
-  document_type, image_path, ocr_text, station_no, received_by, received_at, status, admin_notes, created_at)
+  document_type, image_path, ocr_text, station_no, received_by, received_at, status, admin_notes, created_at,
+  plate_confirmed)
   on table public.vehicle_intakes from public, anon, authenticated;
 revoke all privileges (id, vehicle_intake_id, status, created_by, created_at,
   completed_at, completed_by, override_reason, retention_claimed_at)
@@ -90,7 +95,7 @@ grant insert (title, notes, priority, due_at, assignee_id, created_by)
 grant insert (profile_id, station_no) on public.intake_station_users to authenticated;
 grant update (profile_id, station_no) on public.intake_station_users to authenticated;
 grant insert (plate_number, customer_name, vehicle_model, chassis_number,
-  document_type, image_path, station_no, received_by)
+  document_type, image_path, station_no, received_by, plate_confirmed)
   on public.vehicle_intakes to authenticated;
 
 -- Task and workflow writes go through validated private SECURITY DEFINER RPCs.
@@ -223,6 +228,19 @@ create policy "primary admin manages intake station users"
 on public.intake_station_users for all to authenticated
 using (private.is_primary_admin())
 with check (private.is_primary_admin());
+
+drop policy if exists "intake users create own vehicle intake" on public.vehicle_intakes;
+create policy "intake users create own vehicle intake" on public.vehicle_intakes
+for insert to authenticated
+with check (
+  received_by = (select auth.uid())
+  and plate_confirmed is true
+  and exists (
+    select 1 from public.intake_station_users s
+    where s.profile_id = (select auth.uid())
+      and s.station_no = vehicle_intakes.station_no
+  )
+);
 
 drop policy if exists "assigned technicians read vehicle intake" on public.vehicle_intakes;
 create policy "assigned technicians read vehicle intake" on public.vehicle_intakes
@@ -479,5 +497,4 @@ revoke all on function public.admin_complete_work_order(uuid, text) from public,
 grant execute on function public.assign_vehicle_technicians(uuid, uuid[], timestamptz) to authenticated;
 grant execute on function public.set_work_assignment_status(uuid, text, text) to authenticated;
 grant execute on function public.admin_complete_work_order(uuid, text) to authenticated;
-
 
