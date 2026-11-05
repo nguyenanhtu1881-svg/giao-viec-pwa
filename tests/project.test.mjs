@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
+import vm from "node:vm";
 import { test } from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -14,6 +15,56 @@ test("static DOM references in app.js exist in index.html", async () => {
     .map((match) => match[1]);
   const missing = [...new Set(references.filter((id) => !idSet.has(id)))];
   assert.deepEqual(missing, []);
+});
+
+test("service worker only caches successful responses and uses offline HTML for navigation", async () => {
+  const source = await read("sw.js");
+
+  async function requestThroughWorker(request, networkFetch) {
+    const listeners = {};
+    const entries = new Map([["./index.html", { source: "cached offline page" }]]);
+    const cache = {
+      addAll: async () => {},
+      put: async (key, value) => entries.set(typeof key === "string" ? key : key.url, value),
+    };
+    const caches = {
+      open: async () => cache,
+      match: async (key) => entries.get(typeof key === "string" ? key : key.url),
+      keys: async () => [],
+      delete: async () => true,
+    };
+    vm.runInNewContext(source, {
+      self: { addEventListener: (name, handler) => { listeners[name] = handler; } },
+      caches,
+      fetch: networkFetch,
+      location: { origin: "https://example.test" },
+      URL,
+    });
+
+    let responsePromise;
+    listeners.fetch({ request, respondWith: (promise) => { responsePromise = promise; } });
+    return { responsePromise, entries };
+  }
+
+  const failedAsset = await requestThroughWorker(
+    { method: "GET", url: "https://example.test/app.js", mode: "no-cors" },
+    async () => { throw new Error("offline"); },
+  );
+  await assert.rejects(failedAsset.responsePromise, /offline/);
+  assert.equal(failedAsset.entries.has("https://example.test/app.js"), false);
+
+  const offlineNavigation = await requestThroughWorker(
+    { method: "GET", url: "https://example.test/work-orders", mode: "navigate" },
+    async () => { throw new Error("offline"); },
+  );
+  assert.deepEqual(await offlineNavigation.responsePromise, { source: "cached offline page" });
+
+  const failedResponse = await requestThroughWorker(
+    { method: "GET", url: "https://example.test/missing.js", mode: "no-cors" },
+    async () => ({ ok: false, type: "basic", status: 404, clone() { return this; } }),
+  );
+  await failedResponse.responsePromise;
+  assert.equal(failedResponse.entries.has("https://example.test/missing.js"), false);
 });
 
 test("tracked database history and new workflow migration are present", async () => {
