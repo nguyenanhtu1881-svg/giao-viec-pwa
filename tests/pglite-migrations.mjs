@@ -104,6 +104,15 @@ try {
   });
   console.log("PASS workflow/security migration preserves existing intake and leaves legacy confirmation unknown");
 
+  const stalePublicHelperPolicies = await database.query(`
+    select policyname from pg_policies
+    where schemaname in ('public', 'storage')
+      and coalesce(qual, '') || ' ' || coalesce(with_check, '')
+          ~ 'public\\.(is_admin|is_primary_admin)\\s*\\('
+  `);
+  assert.deepEqual(stalePublicHelperPolicies.rows, [], "RLS policies must not call revoked public authorization helpers");
+  console.log("PASS RLS policies do not depend on revoked public authorization helpers");
+
   const checks = await database.query(`
     select to_regclass('public.work_orders') as work_orders,
            to_regclass('public.work_assignments') as work_assignments,
