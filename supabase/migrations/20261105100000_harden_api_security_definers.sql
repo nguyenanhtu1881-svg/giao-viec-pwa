@@ -273,7 +273,7 @@ using (
   private.is_admin()
   or exists (
     select 1 from public.work_assignments a
-    where a.work_order_id = id and a.technician_id = (select auth.uid())
+    where a.work_order_id = work_orders.id and a.technician_id = (select auth.uid())
   )
 );
 
