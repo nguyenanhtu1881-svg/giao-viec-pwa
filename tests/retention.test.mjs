@@ -17,6 +17,17 @@ test("retention endpoint rejects requests without the cron secret", async () => 
   assert.equal(calls.length, 0);
 });
 
+test("retention endpoint only accepts POST", async () => {
+  calls.length = 0;
+  globalThis.fetch = async (...args) => { calls.push(args); throw new Error("fetch should not run"); };
+  const response = await handler(new Request("https://function.example", {
+    method: "GET",
+    headers: { "x-retention-secret": "cron-secret" },
+  }));
+  assert.equal(response.status, 405);
+  assert.equal(calls.length, 0);
+});
+
 test("retention deletes Storage before the database record", async () => {
   calls.length = 0;
   globalThis.fetch = async (url, init) => {
@@ -64,4 +75,3 @@ test.after(() => {
   globalThis.fetch = originalFetch;
   delete globalThis.Deno;
 });
-
