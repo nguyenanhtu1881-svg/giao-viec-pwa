@@ -111,7 +111,7 @@ using (
   public.is_admin()
   or exists (
     select 1 from public.work_assignments a
-    where a.work_order_id = id and a.technician_id = (select auth.uid())
+    where a.work_order_id = work_orders.id and a.technician_id = (select auth.uid())
   )
 );
 
@@ -535,4 +535,3 @@ revoke all on function public.release_retention_claim(uuid) from public, anon, a
 grant execute on function public.claim_expired_vehicle_intakes(integer) to service_role;
 grant execute on function public.complete_retention_for_intake(uuid) to service_role;
 grant execute on function public.release_retention_claim(uuid) to service_role;
-
