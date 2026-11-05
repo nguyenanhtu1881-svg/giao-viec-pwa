@@ -20,6 +20,16 @@ function clearIntakePreview(){
   $("intakePreview").removeAttribute("src");
   $("intakePreview").classList.add("hidden");
 }
+async function removeTemporaryIntakeImage(path){
+  try{
+    const {error}=await supabaseClient.storage.from("vehicle-intakes").remove([path]);
+    if(error)throw error;
+    return true;
+  }catch(error){
+    console.error("Không xóa được ảnh tiếp nhận chưa gắn với hồ sơ:",error);
+    return false;
+  }
+}
 
 async function init(){
   if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
@@ -460,9 +470,11 @@ async function submitVehicleIntake(e) {
     plate_confirmed: $("intakePlateConfirmed").checked
   });
   if (error) {
-    await supabaseClient.storage.from("vehicle-intakes").remove([path]);
     console.error(error);
-    msg("intakeMessage", "Ảnh đã tải lên nhưng chưa lưu được hồ sơ. Vui lòng thử lại.");
+    const imageRemoved=await removeTemporaryIntakeImage(path);
+    msg("intakeMessage",imageRemoved
+      ? "Chưa lưu được hồ sơ và ảnh tạm đã được xóa. Vui lòng thử lại."
+      : "Chưa lưu được hồ sơ; ảnh tạm chưa xóa được. Vui lòng báo Admin để kiểm tra.");
     return;
   }
   $("intakeForm").reset();
