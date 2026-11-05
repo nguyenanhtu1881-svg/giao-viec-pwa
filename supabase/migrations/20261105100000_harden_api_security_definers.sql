@@ -166,6 +166,9 @@ create policy "profiles read own or admin" on public.profiles
 for select to authenticated
 using (id = (select auth.uid()) or private.is_admin());
 
+-- The untracked core bootstrap may be applied after older remote migrations; remove its
+-- broader legacy policy explicitly so it cannot OR with the primary-admin policy.
+drop policy if exists "admin can update profiles" on public.profiles;
 drop policy if exists "primary admin can update profiles" on public.profiles;
 create policy "primary admin can update profiles" on public.profiles
 for update to authenticated
