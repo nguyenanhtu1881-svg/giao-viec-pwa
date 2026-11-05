@@ -257,6 +257,9 @@ create policy "intake users read own and admins read all" on public.vehicle_inta
 for select to authenticated
 using (received_by = (select auth.uid()) or private.is_admin());
 
+-- Intake rows are immutable to API clients; remove the obsolete direct-admin update policy.
+drop policy if exists "admins update vehicle intakes" on public.vehicle_intakes;
+
 drop policy if exists "assigned technicians read vehicle intake" on public.vehicle_intakes;
 create policy "assigned technicians read vehicle intake" on public.vehicle_intakes
 for select to authenticated
