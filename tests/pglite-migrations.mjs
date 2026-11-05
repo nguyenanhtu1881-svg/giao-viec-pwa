@@ -168,17 +168,32 @@ try {
   console.log("PASS administrator exception completion requires and records reason");
 
   await database.exec("reset role");
+  const activeIntake = await database.query(`insert into public.vehicle_intakes
+    (plate_number,document_type,image_path,station_no,received_by,plate_confirmed,status)
+    values ('51A-333.33','quotation','${intakeUser}/active.jpg',1,'${intakeUser}',true,'assigned') returning id`);
+  await database.query("select set_config('request.jwt.claim.sub',$1,false)", [adminId]);
+  await database.exec("set role authenticated");
+  await database.query(
+    "select public.assign_vehicle_technicians($1,$2::uuid[],null)",
+    [activeIntake.rows[0].id, [users[3][0]]],
+  );
+  await database.exec("reset role");
   await database.exec(`update public.work_orders set completed_at=now()-interval '46 days'
     where id='${orderId}';`);
   await database.exec("set role service_role");
   const claimed = await database.query("select * from public.claim_expired_vehicle_intakes(25)");
   assert.deepEqual(claimed.rows.map((row) => row.intake_id), [intakeId]);
+  assert.ok(!claimed.rows.some((row) => row.intake_id === activeIntake.rows[0].id));
   const removed = await database.query("select public.complete_retention_for_intake($1) as deleted", [intakeId]);
   assert.equal(removed.rows[0].deleted, true);
   await database.exec("reset role");
   const left = await database.query("select count(*)::int as n from public.vehicle_intakes where id=$1", [intakeId]);
   assert.equal(left.rows[0].n, 0);
-  console.log("PASS 45-day retention claims and deletes only a completed closed intake");
+  const activeLeft = await database.query(`select vi.status as intake_status,wo.status as order_status
+    from public.vehicle_intakes vi join public.work_orders wo on wo.vehicle_intake_id=vi.id
+    where vi.id=$1`, [activeIntake.rows[0].id]);
+  assert.deepEqual(activeLeft.rows[0], { intake_status: "assigned", order_status: "active" });
+  console.log("PASS 45-day retention deletes only completed closed intake and preserves active work");
 } finally {
   await database.close();
 }
